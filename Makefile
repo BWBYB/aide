@@ -86,9 +86,9 @@ verify-index:
 check-provenance:
 	@awk '/^## 三、自动检查/,/^## 三之二/' $(SPEC) | grep -E '^\| `test_' > /tmp/spec-rows.txt
 	@echo "断言行数：$$(wc -l < /tmp/spec-rows.txt | tr -d ' ')"
-	@echo "有行号：$$(grep -cE '[a-z-]+:[0-9]' /tmp/spec-rows.txt | tr -d ' ')"
+	@echo "有行号：$$(grep -cE '[A-Za-z0-9._-]+:[0-9]' /tmp/spec-rows.txt | tr -d ' ')"
 	@echo "标自定：$$(grep -c '自定' /tmp/spec-rows.txt | tr -d ' ')"
-	@grep -vE '[a-z-]+:[0-9]|自定' /tmp/spec-rows.txt > /tmp/spec-bad.txt || true
+	@grep -vE '[A-Za-z0-9._-]+:[0-9]|自定' /tmp/spec-rows.txt > /tmp/spec-bad.txt || true
 	@test ! -s /tmp/spec-bad.txt || { echo "[error] 以下断言既无行号也未标自定："; cat /tmp/spec-bad.txt; exit 1; }
 	@echo "出处覆盖：完整"
 
@@ -110,6 +110,13 @@ test-contract:
 .PHONY: status
 status:
 	@cat docs/status.md
+
+# 加载 skill 并留痕（带 sha256）：make skill-load SKILLS="a b" MILESTONE=M1
+# 手工写「已加载」不算加载——判定标准是日志里有没有这一行。
+.PHONY: skill-load
+skill-load:
+	@test -n "$(SKILLS)" || { echo "[error] 用法：make skill-load SKILLS=\"a b\" MILESTONE=M1"; exit 2; }
+	python3 tools/load_skill.py $(SKILLS) --for $(or $(MILESTONE),-)
 
 # 改完验收清单先跑这个：对比基线断言集合，一行看出有没有丢
 # - BASE 默认 HEAD：问的是"这次改动有没有丢条目"；查历史用 BASE=HEAD~3

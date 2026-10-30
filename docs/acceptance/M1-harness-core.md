@@ -38,7 +38,7 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1 可执行 43 条**（A8 + B6 + C6 + D11 + E5 + F2 + G5）。
+按声明的 skill 分组，**M1 可执行 44 条**（A8 + B6 + C6 + D11 + E5 + F3 + G5）。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之三、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
@@ -110,9 +110,11 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 | `test_policy_blocks_destructive_pattern` | `rm -rf` / 删库重建 / 覆盖未读文件 → deny 或 need_approval | M1 | harness:45 |
 | `test_policy_denies_symlink_escape` | 解析 symlink 后逃出 sandbox root → deny | M1 | **自定，无 skill 出处** |
 
-### F. 入口登记（`AGENTS.md` 第七节）
+### F. 机制登记（入口 + 留痕）
 
 | 断言 | 断言什么 | 可执行 | 出处 |
+|---|---|---|---|
+| `test_skill_load_is_logged` | 清单声明的 skill 均在 `docs/skills-load.log` 内，且哈希与当前 `SKILL.md` 一致（skill 升级即红） | M1 | AGENTS.md:62 |
 |---|---|---|---|
 | `test_all_entry_modules_registered` | `src/` 下新增任何模块都必须出现在 `ENTRY_MODULES`，否则测试红 | M1 | **自定**（本仓机制） |
 | `test_offline_applied_before_sdk_import` | 入口在干净子进程按自身顺序导入后：**若加载了第三方 SDK**（openai/httpx/transformers/torch/huggingface_hub），须满足 `HF_HUB_OFFLINE=1` 且 HF 常量为 True；纯标准库模块不判定 | M1 | **自定**（M0 教训） |

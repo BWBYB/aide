@@ -143,6 +143,17 @@
 - 计数：`37 passed, 2 skipped`（`test-unit` 为 `37 passed, 1 skipped, 1 deselected`）；spec 43 条未变；出处覆盖完整。
 - 下一项：C 组压缩（此时 G 的连续失败计数已就绪，压缩熔断可直接接）。
 
+### 2026-10-30：Skill 加载从形容词变成可执行动作（M1 清单 43 → 44）
+- 更新位置：`tools/load_skill.py`、`Makefile`、`tests/test_skills_log.py`、`AGENTS.md`、`docs/acceptance/M1-harness-core.md`、`docs/skills-load.log`
+- **机制**：`make skill-load SKILLS="a b" MILESTONE=M1` → 把正文打印进上下文，并在 `docs/skills-load.log` 追加一行「时间 / skill / sha256 前 16 / 字节数 / 里程碑」。**哈希是核心**：它证明读过的是这个版本。
+- **两条校验**：`test_declared_skills_logged`（声明的 skill 必须留痕）、`test_skill_load_is_logged`（哈希与当前 `SKILL.md` 一致）。后者是**钩子而非存档**——skill 一升级就红，逼我回头复核那 36 条引用是否还成立。
+- **四步验收全部通过**：① 加载 6 个 → 日志 6 行；② 删日志一行 → `test_declared_skills_logged` **红**；③ 改 `agent-state-bar/SKILL.md` 末尾 → `test_logged_skill_version_matches` **红**，还原后 sha256 与原值一致（`True`）；④ 还原后回到绿。
+- **M0 的历史债（不追认）**：M0 的 skill 留痕只有自然语言自述、无机器载体，**不可复核**；机制自 M1 起生效。若将来要补，唯一诚实的做法是重读一遍并标 `M0-review`——那是"今天重读的证据"，不是"当时加载的证据"，两者不能混。
+- **清单**：F 组扩为「机制登记（入口 + 留痕）」，新增 1 条，43 → **44**（A8+B6+C6+D11+E5+F3+G5）。
+- **check-provenance 又抓到一次**：新条目出处写「AGENTS.md 六节」没有行号，被拦下；补为 `AGENTS.md:62`，同时把正则放宽到能匹配 `AGENTS.md:NN` 这类文件名+行号（负向测试复验仍有效）。
+- 计数：`40 passed, 2 skipped`；spec 44 条；出处 36 行号 / 8 自定 / 完整。
+- 下一项：C 组压缩。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
