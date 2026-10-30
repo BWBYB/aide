@@ -132,6 +132,17 @@
 - 计数：`28 passed, 2 skipped`；spec 43 条未变；出处覆盖完整。
 - 下一项：G 组（三重闸门 + verifier），或按依赖图先补 C 组压缩。
 
+### 2026-10-30：补轨迹配对反向检查 + M1 G 组（三重闸门与 verifier）
+- 更新位置：`src/aide/core/state_bar.py`、`loop.py`、`verifier.py`、`tests/test_state_bar.py`、`tests/test_loop_guards.py`、`tests/fakes.py`
+- **补上用户指出的反向漏检**：`from_trace` 原来只查"tool 结果无对应调用"，没查"调用无对应结果"。后者会直接 400（OpenAI/DeepSeek 强校验 `tool_call_id` 必须有结果），常见于流式中断、工具超时/取消、并发 3 个只回 2 个。现改为 `pending` 非空即抛错并列出缺失的 id；**自动修复留到 D 组**（占位符修补 vs 拒绝要分场景，属 D 组的判断）。
+- **G 组超时怎么测（用户开工前点名的问题）**：不真睡。`ManualClock` 由 `FakeProvider(latency_seconds=30)` 在每次调用时推进时钟——语义等价于"这次调用花了 30 秒"，且完全确定。理由：超时与抛错是两条路径，`fail_after` 注入的是**立刻返回的异常**，撞不到墙钟闸门。
+- **三重闸门**：`check_limits` 顺序固定（轮次 → 预算 → 墙钟），同状态必得同一结论；三种终止都返回 `Stop(reason, detail)` 且 `partial=True` 保证已完成轨迹不丢。
+- **verifier 签名**：`verify(artifact, baseline)`，基线是参数不查注册表（与 ADR 0004 同一手法，避免 G→E 依赖成环）。`PYTHON_FILE_BASELINE` 三条谓词：非空 / 语法可解析（错误带行号）/ 有可执行语句（挡"只改注释"的假修复）。
+- **自称完成不等于完成**：无基线 → `VERIFICATION_UNAVAILABLE`；有基线但不合格 → 把失败原因回灌进轨迹后继续；合格 → `COMPLETED`。测试断言"第一次自称完成时不终止，第 2 轮才终止"。
+- **变异测试 5/5 有效，且按用户归纳的第九种形态做了三步校验**：基线绿 → 变异红（只红预期那条）→ **还原后必须再回到绿**。第三步是关键，它才是"我确实还原了"的证明。脚本已内置清 `__pycache__`。
+- 计数：`37 passed, 2 skipped`（`test-unit` 为 `37 passed, 1 skipped, 1 deselected`）；spec 43 条未变；出处覆盖完整。
+- 下一项：C 组压缩（此时 G 的连续失败计数已就绪，压缩熔断可直接接）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

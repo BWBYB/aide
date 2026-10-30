@@ -98,6 +98,16 @@ class TraceSummary:
                         "轨迹完整性异常：存在没有配对 assistant 调用的 tool 结果"
                     )
                 pending.pop(message.tool_call_id, None)
+
+        # 反方向的漏检会直接变成 400：assistant 的每个 tool_call_id 都必须有对应
+        # tool 消息，OpenAI / DeepSeek 都会强校验。常见于流式中断、工具超时/取消、
+        # 一次并发 3 个调用只回来 2 个结果。
+        # error-recovery:28 要求在注入上下文前自动修复配对；M1 还没有修复策略
+        # （占位符修补 vs 拒绝要分场景），因此这里先抛错，修复留到 D 组。
+        if pending:
+            raise StateBarError(
+                "轨迹不完整：以下调用的结果消息缺失 —— " + ", ".join(sorted(pending))
+            )
         return cls(
             tool_calls=dict(counter),
             todos=tuple(todos),

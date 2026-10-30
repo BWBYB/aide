@@ -9,6 +9,15 @@ from .context import (
     wrap_state_bar,
 )
 from .message import Msg, ToolCall
+from .loop import (
+    Limits,
+    LoopResult,
+    RunState,
+    Stop,
+    StopReason,
+    check_limits,
+    run_loop,
+)
 from .state_bar import (
     ErrorSummary,
     StateBarError,
@@ -18,6 +27,7 @@ from .state_bar import (
     build_state_bar,
     state_bar_payload,
 )
+from .verifier import PYTHON_FILE_BASELINE, Baseline, Verification, verify
 
 __all__ = [
     "Msg",

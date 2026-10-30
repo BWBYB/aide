@@ -38,6 +38,8 @@ ENTRY_MODULES = [
     "aide.core.message",
     "aide.core.context",
     "aide.core.state_bar",
+    "aide.core.verifier",
+    "aide.core.loop",
 ]
 
 PROBE = r"""

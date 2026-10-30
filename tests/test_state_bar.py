@@ -169,6 +169,32 @@ def test_from_trace_rejects_orphan_tool_result() -> None:
 
 
 @pytest.mark.unit
+def test_from_trace_rejects_unanswered_tool_call() -> None:
+    """assistant 发了调用但结果缺失，必须在注入上下文前炸掉。
+
+    这个方向漏检会直接 400：OpenAI / DeepSeek 强校验每个 tool_call_id 都有结果。
+    常见于流式中断、工具超时/取消、并发 3 个调用只回来 2 个。
+    """
+    trace = [
+        Msg(role="user", content="并发读三个文件"),
+        Msg(
+            role="assistant",
+            content=None,
+            tool_calls=(
+                ToolCall("c1", "read_file", {"path": "a.md"}),
+                ToolCall("c2", "read_file", {"path": "b.md"}),
+                ToolCall("c3", "read_file", {"path": "c.md"}),
+            ),
+        ),
+        Msg(role="tool", content="A", tool_call_id="c1"),
+        Msg(role="tool", content="B", tool_call_id="c2"),
+    ]
+    with pytest.raises(StateBarError) as error:
+        TraceSummary.from_trace(trace)
+    assert "c3" in str(error.value), "错误信息应指出缺哪个调用"
+
+
+@pytest.mark.unit
 def test_build_state_bar_requires_explicit_clock() -> None:
     """不允许隐式读系统时间：传非 datetime 直接拒绝。"""
     summary = TraceSummary.from_trace(two_call_trace(), system=SYSTEM)

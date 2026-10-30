@@ -17,7 +17,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Iterable, Sequence
+
+
+class ManualClock:
+    """可注入的时钟。
+
+    为什么需要它：`test_timeout_limit_terminates` 要测"墙钟超时"，而超时与抛错是
+    两条路径——`fail_after` 注入的是**立刻返回的异常**，不是"卡住不返回"。
+    真睡（sleep）会让测试变慢且不稳定，所以让替身"在调用期间推进时钟"：
+    这在语义上等价于"这次调用花了 N 秒"，而且是确定性的。
+    """
+
+    def __init__(self, start: datetime) -> None:
+        self._now = start
+
+    def __call__(self) -> datetime:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        self._now = self._now + timedelta(seconds=seconds)
 
 
 class FakeProviderError(Exception):
@@ -65,7 +85,13 @@ class FakeProvider:
     - `recorded` 保存每次请求的完整负载，供前缀字节断言使用
     """
 
-    def __init__(self, script: Sequence[ModelResponse]) -> None:
+    def __init__(
+        self,
+        script: Sequence[ModelResponse],
+        *,
+        clock: "ManualClock | None" = None,
+        latency_seconds: float = 0.0,
+    ) -> None:
         if not script:
             raise ValueError("FakeProvider 需要至少一条脚本响应")
         self._script = list(script)
@@ -73,6 +99,8 @@ class FakeProvider:
         self._error_factory: Any = FakeRateLimitError
         self._recorded: list[dict[str, Any]] = []
         self._calls = 0
+        self._clock = clock
+        self._latency = latency_seconds
 
     def fail_after(self, n: int, error_factory: Any = FakeRateLimitError) -> "FakeProvider":
         """第 n 次调用之后开始失败（n=0 表示第一次就失败）。"""
@@ -91,10 +119,17 @@ class FakeProvider:
         return self._calls
 
     def complete(self, request: dict[str, Any]) -> ModelResponse:
-        """接受完整请求体（messages + tools），返回一次响应或抛错。"""
+        """接受完整请求体（messages + tools），返回一次响应或抛错。
+
+        每次调用顺带推进注入的时钟 `latency_seconds`——这就是"这次调用花了 N 秒"，
+        用来测墙钟超时，不需要真的 sleep。
+        """
         self._recorded.append(request)
         index = self._calls
         self._calls += 1
+
+        if self._clock is not None and self._latency:
+            self._clock.advance(self._latency)
 
         if self._fail_at is not None and index >= self._fail_at:
             raise self._error_factory(f"injected failure at call #{index}")
