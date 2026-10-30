@@ -41,6 +41,8 @@ make run TASK="..." AIDE_MAX_TURNS=1
 - `test_timeout_limit_terminates` —— 墙钟超时生效
 - `test_compression_keeps_trace_pointer` —— 压缩后仍保留原始轨迹索引，可回溯
 - `test_fallback_preserves_prefix` —— 主厂商失败切备用厂商时，请求前缀逐字节一致
+- `test_offline_env_set_before_sdk_import` —— 入口导入后 `os.environ["HF_HUB_OFFLINE"] == "1"`，
+  且断言发生在 `import openai` / `import httpx` 之前（防静默联网，见 `AGENTS.md` 第七节）
 
 ## 四、人工判断
 

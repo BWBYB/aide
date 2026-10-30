@@ -12,15 +12,14 @@ from functools import lru_cache
 from pathlib import Path
 from types import SimpleNamespace
 
-DEFAULT_RAG_HOME = Path.home() / "Documents" / "ChatGPT" / "个人网站"
+try:  # 必须排在任何第三方导入之前（见 _offline 模块文档）
+    import _offline  # noqa: F401
+    from _offline import REQUIRED_ENV  # noqa: F401
+except ImportError:  # 作为包导入时（如 python -m knowledge.loader）
+    from knowledge import _offline  # noqa: F401
+    from knowledge._offline import REQUIRED_ENV  # noqa: F401
 
-# 默认离线：模型已缓存时不该联网。
-# 否则守卫会因为网络失败而崩，与"向量错位"走同一条失败路径，退出码无法区分。
-# 需要首次下载模型或排查网络时设 AIDE_ALLOW_HF_NETWORK=1。
-# 必须在任何 transformers/huggingface_hub 导入之前生效，故放在模块顶层。
-if not os.environ.get("AIDE_ALLOW_HF_NETWORK"):
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+DEFAULT_RAG_HOME = Path.home() / "Documents" / "ChatGPT" / "个人网站"
 
 
 class RagHomeMissing(RuntimeError):

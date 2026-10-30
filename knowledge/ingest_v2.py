@@ -24,9 +24,13 @@ import loader
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS = Path(__file__).with_name("corpus.yaml")
 
-# 退出码：把"环境不可用"和"数据错位"分开，CI 与人工排查一眼可辨
+# 退出码：把"环境不可用"和"数据错位"分开，CI 与人工排查一眼可辨。
+#
+# 2 号与 argparse 撞车：参数写错时 argparse 自己也返回 2。因此把 2 定义成
+# 「调用方错误」——包括命令行参数非法与上游路径/语料清单配置错误，两者都要求
+# 调用方改命令或改配置，而不是排查运行环境。若需要严格区分，用 4 判定环境问题。
 EXIT_OK = 0
-EXIT_CORPUS = 2  # 语料定义/上游路径问题
+EXIT_USAGE = 2  # 调用方错误：参数非法 / 上游路径缺失 / 语料清单与实际不符
 EXIT_INDEX_MISMATCH = 3  # 向量与文本错位（数据问题）
 EXIT_UNAVAILABLE = 4  # 模型或索引加载失败（环境/网络问题）
 _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -302,4 +306,4 @@ if __name__ == "__main__":
         raise SystemExit(EXIT_UNAVAILABLE)
     except (CorpusError, loader.RagHomeMissing) as error:
         print(f"[error] {error}", file=sys.stderr)
-        raise SystemExit(EXIT_CORPUS)
+        raise SystemExit(EXIT_USAGE)

@@ -57,3 +57,16 @@
 3. **空着即未完成**：该段未填写的里程碑，只能停在 `待验收`，不得进入 `完成`。
 4. **冲突以书稿为准**：skill 结论与本步实现冲突时，默认改实现；确实要偏离时在 `docs/adr/` 记一条，写明动机与验证条件。
 5. **明确不用的要写明理由**：`computer-use`、`post-training-strategy`、`reward-design`、`bad-case-to-dpo`、`multi-agent-design` 属于本项目有意不做，理由见 `docs/skills-plan.md`，不得因为"没用上"而含糊过去。
+
+## 七、离线前置（import 时序）
+
+任何入口模块（脚本、CLI、服务启动、测试 conftest）**必须在导入第三方库之前**先
+`import knowledge._offline`，或经由 `knowledge.loader` 间接生效（`knowledge/_offline.py` 是唯一实现处）。
+
+原因：`huggingface_hub` 在**导入期**读取 `HF_HUB_OFFLINE` 常量。设晚了不报错，只会让每次调用
+静默尝试联网直到超时——比崩溃更难查，是"静默失效"的第三种形态。
+
+高危点：M1 的 LLM 客户端会直接 `import openai` / `import httpx`，一旦它先于 `knowledge.loader`
+被导入，离线设置就晚了。
+
+验收方式：M1 的测试断言 `os.environ["HF_HUB_OFFLINE"] == "1"`，且该断言在导入 SDK 之前成立。
