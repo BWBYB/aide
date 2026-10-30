@@ -96,6 +96,17 @@ check-provenance:
 test:
 	$(AIDE_PY) -m pytest
 
+# 日常回归：纯函数与替身，无网络、无模型
+.PHONY: test-unit
+test-unit:
+	$(AIDE_PY) -m pytest -m "not contract and not slow"
+
+# 契约测试：验证「对方怎么收」，需要真实 key 与网络
+.PHONY: test-contract
+test-contract:
+	@test -n "$$AIDE_CONTRACT" || { echo "[skip] 设 AIDE_CONTRACT=1 并配置 key 后再跑"; exit 1; }
+	$(AIDE_PY) -m pytest -m contract
+
 .PHONY: status
 status:
 	@cat docs/status.md

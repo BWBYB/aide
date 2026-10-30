@@ -115,7 +115,7 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 | 断言 | 断言什么 | 可执行 | 出处 |
 |---|---|---|---|
 | `test_all_entry_modules_registered` | `src/` 下新增任何模块都必须出现在 `ENTRY_MODULES`，否则测试红 | M1 | **自定**（本仓机制） |
-| `test_offline_applied_before_sdk_import` | 每个入口在干净子进程按自身顺序导入后，`huggingface_hub.constants.HF_HUB_OFFLINE` 为 True | M1 | **自定**（M0 教训） |
+| `test_offline_applied_before_sdk_import` | 入口在干净子进程按自身顺序导入后：**若加载了第三方 SDK**（openai/httpx/transformers/torch/huggingface_hub），须满足 `HF_HUB_OFFLINE=1` 且 HF 常量为 True；纯标准库模块不判定 | M1 | **自定**（M0 教训） |
 
 ### G. 预算、终止与验证（`loop-engineering`）
 

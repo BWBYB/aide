@@ -32,27 +32,43 @@ KNOWLEDGE = REPO_ROOT / "knowledge"
 #: M1 必须追加 `aide.llm.client`、`aide.tools.mcp_client`（见 AGENTS.md 第七节）。
 #: 清单故意从严：`src/` 下所有模块都要登记，而不是只登记"看起来会 import SDK"的那些——
 #: 判断"是否需要离线"本身就容易漏，交给机器拦截更便宜。
-ENTRY_MODULES = ["ingest_v2", "eval_v2"]
+ENTRY_MODULES = [
+    "ingest_v2",
+    "eval_v2",
+    "aide.core.message",
+    "aide.core.context",
+]
 
 PROBE = r"""
 import importlib
 import os
 import sys
 
-module_name = sys.argv[1]
-importlib.import_module(module_name)
+#: 会触发网络或读取 HF 离线常量的第三方库
+SDK_ROOTS = {"openai", "httpx", "transformers", "torch", "huggingface_hub"}
 
+module_name = sys.argv[1]
+before = set(sys.modules)
+importlib.import_module(module_name)
+loaded = {name.split(".")[0] for name in sys.modules} - {name.split(".")[0] for name in before}
+
+sdk = sorted(loaded & SDK_ROOTS)
 state = "unloaded"
 if "huggingface_hub.constants" in sys.modules:
     import huggingface_hub.constants as constants
     state = "true" if constants.HF_HUB_OFFLINE else "false"
 
 env = os.environ.get("HF_HUB_OFFLINE")
-print(f"STATE={state} ENV={env}")
+print(f"SDK={sdk} STATE={state} ENV={env}")
 
+# 纯标准库模块不涉及离线，无需判定
+if not sdk:
+    sys.exit(0)
+# SDK 已导入但 HF 常量被固化为 False —— 离线设置晚了
 if state == "false":
     sys.exit(10)
-if state == "unloaded" and env != "1":
+# 导入了 SDK，却从未应用离线策略
+if env != "1":
     sys.exit(11)
 sys.exit(0)
 """
@@ -93,7 +109,7 @@ def test_offline_applied_before_sdk_import(module_name: str) -> None:
         for key, value in os.environ.items()
         if key not in {"AIDE_ALLOW_HF_NETWORK", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"}
     }
-    environment["PYTHONPATH"] = str(KNOWLEDGE)
+    environment["PYTHONPATH"] = os.pathsep.join([str(KNOWLEDGE), str(REPO_ROOT / "src")])
 
     completed = subprocess.run(
         [sys.executable, "-c", PROBE, module_name],
@@ -110,5 +126,8 @@ def test_offline_applied_before_sdk_import(module_name: str) -> None:
             f"HF_HUB_OFFLINE 常量已固化为 False（{detail}）"
         )
     if completed.returncode == 11:
-        pytest.fail(f"{module_name}: 导入后既未加载 SDK 也未设置离线环境变量（{detail}）")
+        pytest.fail(
+            f"{module_name}: 导入了第三方 SDK，但从未应用离线策略"
+            f"（应在导入 SDK 之前 import knowledge._offline）（{detail}）"
+        )
     assert completed.returncode == 0, f"{module_name}: 探针异常退出 {completed.returncode}（{detail}）"

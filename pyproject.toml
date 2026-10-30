@@ -35,9 +35,16 @@ build-backend = "hatchling.build"
 packages = ["src/aide"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "knowledge", "tests"]
 testpaths = ["tests"]
 addopts = "-q"
+# 按「跑起来需要什么」分档，而不是按知识归属。
+# 不分档会演变成两种坏结局：make test 越来越慢，或某天开始需要 API key 才能跑。
+markers = [
+  "unit: 纯函数与替身，无网络、无真实模型、毫秒级",
+  "contract: 需要真实厂商 API，验证「对方怎么收」而非「我们怎么发」",
+  "slow: 需要加载模型或跑长任务，默认不参与日常回归",
+]
 
 [tool.ruff]
 line-length = 100

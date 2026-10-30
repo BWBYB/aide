@@ -96,6 +96,16 @@
 - **新增 `make check-provenance`**：限定在自动检查节内，统计有行号 / 标自定 / 缺失，有缺失即打印具体行并 exit 1。与 `check-spec-diff` 成对——**一个查"有没有少"，一个查"有没有编"**。正反两向实测：正常 `43/35/8/完整`；临时删一处出处后报错并打印该行、exit 1。
 - **假阳性教训（与前面几次方向相反）**：统计时若用全文 `grep -E '^\| \`test_'`，会同时匹配断言表 43 行 + 依赖表 9 行 + 外移表 7 行，得出"22 条无出处"的错误结论——后两张表本来就没有出处列。这不是漏报而是**凭空报出一个不存在的问题**，比漏报更坏：会让人去排查不存在的问题，而报告者显得"很有发现"。规则：**新加的检查第一次跑出异常时，先怀疑工具，再怀疑数据**。
 
+### 2026-10-30：M1 A 组实现（先建测试基础设施，再写 provider）
+- 更新位置：`tests/fakes.py`、`tests/test_context_prefix.py`、`src/aide/core/{message,context}.py`、`pyproject.toml`、`Makefile`、`tests/test_offline_order.py`
+- **`tests/fakes.py` 是 M1 的第一个文件**：`FakeProvider(script)` 按轮次返回、用尽后重复最后一条；`fail_after(n, error)` 注入 429/超时/流中断；`recorded` 保存完整请求体供前缀字节断言。43 条里约 20 条需要控制模型输出，没有它这些断言只能写成"看起来测了"。
+- **按运行成本打 marker**（不是按知识归属）：`unit`（纯函数与替身）/ `contract`（需要真实厂商 API）/ `slow`（需要加载模型）。`test_reasoning_echo_matches_provider_contract` 单独归 `contract` 并默认跳过——**FakeProvider 能验「我们怎么发」，验不了「对方怎么收」**，R1 剥离 vs V4/K2 必须回传只有真 API 才知道。新增 `make test-unit` / `make test-contract`。
+- **A 组产物是纯函数**：`assemble_context(prefix, trajectory, state_bar) -> list[Msg]`，不读时钟、不读环境、不依赖调用次数。`state_bar` 是参数不是内部生成，因此"状态栏进不了前缀"是类型层面的保证，不靠自觉。`Prefix.canonical_bytes()` 提供前缀的唯一权威字节表示，断言比较 digest 而非对象。
+- **A 组 8 条断言全部落地**：前缀 hash 10 轮一致、前缀无易变数据（7 条正则黑名单）、工具定义不进 messages、工具定义内容与顺序不变、角色合法且无自拼接格式、段序位置断言、同输入同字节、轨迹含 system 被拒（额外加的防御断言）。`contract` 那条按设计跳过。
+- **离线守卫发现规则过粗并已修正**：新模块 `aide.core.*` 只依赖标准库，却被判为"未应用离线策略"。改为 **SDK 感知**：子进程对比导入前后的 `sys.modules`，只有加载了 openai/httpx/transformers/torch/huggingface_hub 才要求离线；纯标准库模块跳过。正反实测：无 `_offline` 的 httpx 模块 exit **11**，有 `_offline` 的 exit **0**。
+- **计数**：`18 passed, 2 skipped`；`make test-unit` 为 `18 passed, 1 skipped, 1 deselected`；`check-spec-diff` 43；`check-provenance` 完整。
+- 下一项：等用户按三条审查口复核 A 组（fakes 优先、marker 分档、纯函数），通过后接 B 组状态栏。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
