@@ -62,8 +62,17 @@
 
 ### 2026-10-30：M1 规格先行（只写断言，不写代码）
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`tests/test_offline_order.py`
-- 更新内容：M1 验收清单从 7 条"位置类"断言扩到 **26 条**，按 6 个 skill 分组：上下文与缓存 5 条、状态栏 5 条、压缩 5 条、故障恢复 6 条、执行边界 4 条、入口登记 2 条（含新增的登记拦截）。新增 `test_all_entry_modules_registered`。
+- 更新内容：M1 验收清单从 7 条"位置类"断言重写为分组表。**该版实际 27 条（不是 26），且格式重排时丢掉了 3 条终止类断言**，见下条修正记录。
 - 为什么先写断言：M1 是唯一跨格子的里程碑，清单就是规格书。M0 已经付过一次"先做、再发现尺子不对"的代价（一整轮返工），这次先把尺子定死。
 - 与预期的偏差：原清单里 `coding-agent-harness` 一条断言都没有，实际是"声明了 skill 却没测"。已补执行边界（sandbox root / 只读路径 / 审批 / 验收基线声明）4 条。
 - 验证：登记拦截实测有效——新建 `src/aide/llm/client.py` 后测试报 `assert not {'aide.llm.client'}`，删除后 `8 passed, 1 skipped`。
+- 下一项：② 加载 6 个 skill 并填留痕。
+
+### 2026-10-30：M1 清单回归修正（补回 3 条终止断言，27 → 31）
+- 更新位置：`docs/acceptance/M1-harness-core.md`、`AGENTS.md`、`docs/status.md`
+- **回归事实**：上一版重排时丢掉 3 条断言——`test_turn_limit_terminates_with_reason`、`test_budget_limit_terminates`、`test_timeout_limit_terminates`。用 `comm -23` 对比 `933776f` 与 `569dfe1` 确认；同时 `test_state_bar_appended_not_prepended`、`test_offline_env_set_after/sdk_import` 两条是**改名**（非删除）。
+- **危害**：M1 内部自相矛盾——子模块表写"三重闸门 + 终止判定"、命令预期写"以轮次耗尽结构化终止原因退出"，而断言表 0 条；拒绝条件里"模型自称完成即退出"也没有对应断言。这三条恰是 `loop-engineering` 关于预算与防失控的全部内容。
+- **修正**：新增 G 组「预算与终止」4 条（3 条补回 + 1 条 `test_completion_claim_requires_verifier` 补上拒绝条件与断言表的口径差）。总数 **31 = A5 + B5 + C5 + D6 + E4 + F2 + G4**。
+- **计数纠正**：上一版报"26 条"是错的，实际为 27（把 F 组原有的离线断言当成了新增）。
+- **机制补丁**：`AGENTS.md` 新增硬约束——修改验收文档必须 `git diff` 自查，删除或改名任何断言都要在提交信息里写明理由。**格式重排尤其危险，因为它看起来不像"删"**。
 - 下一项：② 加载 6 个 skill 并填留痕。

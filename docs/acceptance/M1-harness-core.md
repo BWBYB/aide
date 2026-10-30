@@ -35,7 +35,8 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组。**每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider）。
+按声明的 skill 分组，共 **31 条**（A5 + B5 + C5 + D6 + E4 + F2 + G4）。
+**每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider）。
 
 ### A. 上下文与缓存（`context-engineering`、`kv-cache-design`）
 
@@ -93,6 +94,18 @@ make test
 |---|---|
 | `test_all_entry_modules_registered` | `src/` 下新增任何模块文件都必须出现在 `ENTRY_MODULES` 里，否则测试红 |
 | `test_offline_applied_before_sdk_import` | 每个入口模块在干净子进程里按自身顺序导入后，`huggingface_hub.constants.HF_HUB_OFFLINE` 为 True |
+
+### G. 预算与终止（`loop-engineering`）
+
+| 断言 | 断言什么 |
+|---|---|
+| `test_turn_limit_terminates_with_reason` | 轮次耗尽返回**结构化终止原因**，轨迹记录该原因，不得静默返回空答案 |
+| `test_budget_limit_terminates` | token 预算耗尽时停止，**不抛异常**，返回部分结果 + 预算耗尽原因 |
+| `test_timeout_limit_terminates` | 墙钟超时生效，且**已完成步骤的轨迹不丢** |
+| `test_completion_claim_requires_verifier` | 模型自称完成**不得**直接终止循环；必须经 `verifier` 判定，未通过则继续或带原因终止 |
+
+> 这一组是「约束」格子的核心。没有它们，防不住循环停不下来、token 失控与"假成功"。
+> 三条都需要构造资源耗尽场景，是 M1 里工作量最大的断言。
 
 ## 四、人工判断
 
