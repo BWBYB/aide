@@ -58,4 +58,12 @@
 - **M0 已由用户勾选为「完成」（2026-10-30）**。用户意见：离线功能本身成立（四档退出码实测、无网络请求），断言盲区只影响"将来顺序被改坏时能否发现"，不影响当前功能。
 - **按勾选条件先修断言，再开 M1**：原断言的盲区已实测证实——先 `import transformers` 再 `import loader` 时，`constants.HF_HUB_OFFLINE=False` 而 `os.environ.HF_HUB_OFFLINE=1`，旧断言会通过。已换成 `tests/test_offline_order.py`：**每个入口模块在干净子进程里按自己的顺序导入，然后检查 `huggingface_hub.constants.HF_HUB_OFFLINE` 常量**（不是环境变量）。坏顺序探针实测 `exit=10`。
 - **残留边界写进 M0 清单的「已知遗留」**：新守卫按 `ENTRY_MODULES` 清单探测，目前只含 `ingest_v2`/`eval_v2`；**M1 新增 `aide.llm.client`、`aide.tools.mcp_client` 时必须登记**，否则覆盖不到真正会先 `import openai` 的模块。这条已列为 M1 开工前硬前置。
-- 下一项：M1 Harness 内核。开工前先加载 6 个 skill 并登记新入口模块。
+- 下一项：M1 Harness 内核。**顺序按用户要求调整**：① 先加固 M1 验收清单（只写断言）② 再加载 6 个 skill 填留痕 ③ 登记入口模块 ④ 才写代码。
+
+### 2026-10-30：M1 规格先行（只写断言，不写代码）
+- 更新位置：`docs/acceptance/M1-harness-core.md`、`tests/test_offline_order.py`
+- 更新内容：M1 验收清单从 7 条"位置类"断言扩到 **26 条**，按 6 个 skill 分组：上下文与缓存 5 条、状态栏 5 条、压缩 5 条、故障恢复 6 条、执行边界 4 条、入口登记 2 条（含新增的登记拦截）。新增 `test_all_entry_modules_registered`。
+- 为什么先写断言：M1 是唯一跨格子的里程碑，清单就是规格书。M0 已经付过一次"先做、再发现尺子不对"的代价（一整轮返工），这次先把尺子定死。
+- 与预期的偏差：原清单里 `coding-agent-harness` 一条断言都没有，实际是"声明了 skill 却没测"。已补执行边界（sandbox root / 只读路径 / 审批 / 验收基线声明）4 条。
+- 验证：登记拦截实测有效——新建 `src/aide/llm/client.py` 后测试报 `assert not {'aide.llm.client'}`，删除后 `8 passed, 1 skipped`。
+- 下一项：② 加载 6 个 skill 并填留痕。

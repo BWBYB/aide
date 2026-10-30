@@ -30,6 +30,8 @@ KNOWLEDGE = REPO_ROOT / "knowledge"
 
 #: 入口模块清单。**每新增一个会直接 import 第三方 SDK 的入口，都要加到这里。**
 #: M1 必须追加 `aide.llm.client`、`aide.tools.mcp_client`（见 AGENTS.md 第七节）。
+#: 清单故意从严：`src/` 下所有模块都要登记，而不是只登记"看起来会 import SDK"的那些——
+#: 判断"是否需要离线"本身就容易漏，交给机器拦截更便宜。
 ENTRY_MODULES = ["ingest_v2", "eval_v2"]
 
 PROBE = r"""
@@ -54,6 +56,30 @@ if state == "unloaded" and env != "1":
     sys.exit(11)
 sys.exit(0)
 """
+
+
+def test_all_entry_modules_registered() -> None:
+    """`src/` 下新增任何模块文件，都必须出现在 ENTRY_MODULES 里。
+
+    把"别忘登记"从人的记忆变成机器拦截：M1 新建 `src/aide/llm/client.py` 的那一刻
+    这条测试就红，而不是等某天它静默地先 import 了 openai。
+    """
+    src = REPO_ROOT / "src"
+    discovered: set[str] = set()
+    if src.is_dir():
+        for path in src.rglob("*.py"):
+            relative = path.relative_to(src).with_suffix("")
+            if relative.name == "__init__":
+                continue
+            discovered.add(".".join(relative.parts))
+    discovered |= {"ingest_v2", "eval_v2"}
+
+    missing = discovered - set(ENTRY_MODULES)
+    assert not missing, (
+        f"未登记入口模块：{sorted(missing)}\n"
+        "请加入 tests/test_offline_order.py 的 ENTRY_MODULES，"
+        "并确认该模块在导入第三方 SDK 之前先 import knowledge._offline"
+    )
 
 
 @pytest.mark.skipif(

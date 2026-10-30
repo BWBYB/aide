@@ -113,9 +113,11 @@ make test
 
    即**旧断言无法发现顺序被改坏**。已替换为 `tests/test_offline_order.py`（子进程 + 常量版），
    坏顺序探针实测 `exit=10`。
-2. **残留边界**：新守卫按 `ENTRY_MODULES` 清单逐个子进程探测，目前只含 `ingest_v2`、`eval_v2`。
-   **M1 新增 `aide.llm.client` / `aide.tools.mcp_client` 时必须登记进清单**，否则守卫覆盖不到
-   那个真正会先 `import openai` 的模块。这条是 M1 开工前的硬前置。
+2. **残留边界（已由机器拦截，不再是"靠人记得"）**：新守卫按 `ENTRY_MODULES` 清单逐个子进程探测，
+   目前只含 `ingest_v2`、`eval_v2`。为把"别忘登记"从记忆变成拦截，新增
+   `test_all_entry_modules_registered`：`src/` 下出现任何未登记模块，测试立刻红。
+   实测——新建 `src/aide/llm/client.py` 后该测试报
+   `assert not {'aide.llm.client'}`，删除后恢复全绿。
 
 ## 四、拒绝条件（任一命中即不通过）
 
