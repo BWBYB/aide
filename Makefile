@@ -96,9 +96,9 @@ SPEC ?= docs/acceptance/M1-harness-core.md
 BASE ?= HEAD
 .PHONY: check-spec-diff
 check-spec-diff:
-	@git show $(BASE):$(SPEC) 2>/dev/null | grep -oE "test_[a-z_]+" | sort -u > /tmp/spec-old.txt || true
+	@git show $(BASE):$(SPEC) 2>/dev/null | grep -oE "test_[a-z0-9_]+" | sort -u > /tmp/spec-old.txt || true
 	@test -s /tmp/spec-old.txt || { echo "[error] 基线为空，检查 SPEC=$(SPEC) BASE=$(BASE)"; exit 1; }
-	@grep -oE "test_[a-z_]+" $(SPEC) | sort -u > /tmp/spec-new.txt
+	@grep -oE "test_[a-z0-9_]+" $(SPEC) | sort -u > /tmp/spec-new.txt
 	@echo "旧有今无（疑似丢失）："; comm -23 /tmp/spec-old.txt /tmp/spec-new.txt
 	@echo "今有旧无（新增或改名）："; comm -13 /tmp/spec-old.txt /tmp/spec-new.txt
 	@echo "断言条数（仅自动检查节内表格行）：$$(awk '/^## 三、自动检查/,/^## 三之二/' $(SPEC) | grep -cE '^\| `test_' | tr -d ' ')"

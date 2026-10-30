@@ -68,6 +68,17 @@
 - 验证：登记拦截实测有效——新建 `src/aide/llm/client.py` 后测试报 `assert not {'aide.llm.client'}`，删除后 `8 passed, 1 skipped`。
 - 下一项：② 加载 6 个 skill 并填留痕。
 
+### 2026-10-30：加载 6 个 skill，清单按 skill 修正（32 → 45）
+- 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
+- **加载**：`context-engineering`、`kv-cache-design`、`agent-state-bar`、`context-compression`、`error-recovery`、`coding-agent-harness`，全部用 `use_skill` 正式加载并逐条摘出 20 条可落地结论，写入 M1 的 Skill 留痕段。
+- **发现 2 处口径错误（skill 直接纠正，不是我的判断）**：
+  ① D 组四层故障原写"传输 / 协议 / 工具 / 语义"，skill 明确是 **API 层 / 工具层 / 上下文层 / 控制流层**；
+  ② C 组压缩分层原写"截断 → 摘要 → 子 Agent 隔离"，但 skill 里**隔离是"优于压缩的替代方案"，不是最重的一层**，真正的五层是"预算控制 → 删噪声 → API 微压缩 → 归档摘要 → 全量压缩"。
+- **净增 13 条断言（32 → 45）**，每条都能指回一条 skill 结论：工具定义走顶层 `tools` 不得混入 messages、会话恢复字节一致、历史思考回传按厂商契约、状态栏不得被外部内容污染、批量压缩 + `[COMPRESSED]` 标记、摘要必保四类、不可重试错误不得重试、指纹去重、空闲看门狗、错误路径禁止再调 LLM、压缩熔断 3 次、反馈信号结构化、回退可用性、并行故障隔离。
+- **三条裁决**：① 状态栏默认**实现一（每轮替换）**，因含 TODO 与错误摘要属"较大且更新频繁"，符合 skill 的选择规则；保留 `AIDE_STATE_BAR_MODE` 开关以便实测两模式成本曲线。② 压缩阈值写死 **80%**；③ 熔断阈值写死 **3 次**，并注明来源是 Claude Code 生产统计，不是拍脑袋。
+- **又一处工具坑（已修）**：`check-spec-diff` 的 grep 用的是 `test_[a-z_]+`，不含数字，于是 `test_compression_circuit_breaker_after_3_failures` 被截断成 `..._after_`，集合比对里出现一个"幽灵名字"。已改为 `test_[a-z0-9_]+`。这属于同一类：**工具本身静默给出错误结果**。
+- 下一项：③ 登记入口模块（随后写代码）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
