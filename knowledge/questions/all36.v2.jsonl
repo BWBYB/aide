@@ -1,0 +1,36 @@
+{"id": "q002", "question": "BM25 相比最朴素的 TF-IDF，主要修正了哪两个问题？", "type": "term", "gold_chunk_ids": ["book/chapter3.md#20", "book/chapter3.md#21"], "note": "候选；需要同时覆盖词频饱和与文档长度归一化；待人工审核"}
+{"id": "q003", "question": "稠密检索和稀疏检索各自擅长什么、又分别有什么局限？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#23", "book/chapter3.md#24"], "note": "候选；比较语义匹配与精确关键词匹配；待人工审核"}
+{"id": "q006", "question": "知识库中的间接提示注入是怎么产生的，检索系统应该如何隔离资料和指令？", "type": "fact", "gold_chunk_ids": ["book/chapter3.md#40", "book/chapter3.md#41"], "note": "候选；需要覆盖风险来源和指令/数据分离；待人工审核"}
+{"id": "q010", "question": "带工具调用的多轮 API 交互为什么必须把完整历史重新发送给模型？", "type": "fact", "gold_chunk_ids": ["book/chapter2.md#5", "book/chapter2.md#7"], "note": "候选；结合 API 无状态的原因与完整历史、工具结果回传的机制；待人工审核"}
+{"id": "q012", "question": "为什么多跳问题比简单事实问题更可能受益于 Agentic RAG？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter3.md#40", "book/chapter3.md#42"], "note": "候选；检查 Agentic RAG 的迭代检索机制，以及多跳案例中初轮信息不足后进行第二轮聚焦检索；待人工审核"}
+{"id": "q013", "question": "Agent = LLM + 上下文 + 工具这个公式中，三者分别承担什么职责？", "type": "fact", "gold_chunk_ids": ["book/chapter1.md#1"], "note": "候选；检查公式中大脑、眼睛、手脚的对应关系；待人工审核"}
+{"id": "q019", "question": "为什么受限的 Python code interpreter 有时比不断增加专用工具更容易组合，但也会扩大攻击面？", "type": "mixed", "gold_chunk_ids": ["book/chapter1.md#7"], "note": "候选；同时考察工具通用性、组合性和安全代价；待人工审核"}
+{"id": "q026", "question": "ReAct 的最小循环中，Model、Harness 和 Environment 按什么顺序交互？", "type": "code_flow", "gold_chunk_ids": ["book/chapter1.md#14"], "note": "候选；要求复述轨迹、决策、执行和观察的顺序；待人工审核"}
+{"id": "q029", "question": "Freeform Tool Calling 相比传统 JSON 参数工具调用，主要放宽了什么限制？", "type": "mixed", "gold_chunk_ids": ["book/chapter1.md#18"], "note": "候选；检查自由格式工具调用的 API 语义；待人工审核"}
+{"id": "q034", "question": "一个任务什么时候更适合确定性工作流，什么时候可以接受自主 Agent 的动态决策？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter1.md#27", "book/chapter1.md#28"], "note": "候选；结合任务可预测性、灵活性和结构复杂度；待人工审核"}
+{"id": "q043", "question": "倒排索引是什么，它为什么适合支持 BM25 的关键词检索？", "type": "term", "gold_chunk_ids": ["book/chapter3.md#22"], "note": "候选；检查从词反查文档的结构；待人工审核"}
+{"id": "q055", "question": "什么是 AI Agent？它和普通聊天机器人有什么不同？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter1.md#0", "book/chapter1.md#1"], "note": "候选；宽泛自然问法，检查 Agent 定义、规划、工具和反馈闭环；待人工审核"}
+{"id": "q056", "question": "RAG 大概是怎么工作的？从资料到回答会经过哪些步骤？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#13", "book/chapter3.md#14"], "note": "候选；宽泛自然问法，检查检索、增强、生成的整体流程；待人工审核"}
+{"id": "q057", "question": "RAG 一般分成哪几步？", "type": "fact", "gold_chunk_ids": ["book/chapter3.md#14"], "note": "候选；短问法，检查是否能从模糊表达定位核心流程；待人工审核"}
+{"id": "q058", "question": "稠密嵌入和稀疏嵌入有什么区别？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#16", "book/chapter3.md#19"], "note": "候选；对应用户可能混用的嵌入/向量化说法；待人工审核"}
+{"id": "q060", "question": "为什么文档要切成一个个小块？chunk 到底是什么？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#14", "book/chapter3.md#15"], "note": "候选；口语化问法，检查分块目的和基本策略；待人工审核"}
+{"id": "q061", "question": "混合检索到底是在做什么？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#23", "book/chapter3.md#24"], "note": "候选；宽泛自然问法，检查并行检索、融合和重排序的整体概念；待人工审核"}
+{"id": "q063", "question": "Agentic RAG 和普通 RAG 有什么区别？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#40", "book/chapter3.md#42"], "note": "候选；宽泛比较，检查固定检索与多轮自主检索的边界；待人工审核"}
+{"id": "q065", "question": "模糊嵌入和集中嵌入有什么区别？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#16", "book/chapter3.md#19"], "note": "候选；故意使用非标准术语，意指稠密嵌入和稀疏嵌入；用于测试同义指代；待人工审核"}
+{"id": "q067", "question": "资料增强问答是怎么把外部文档交给模型回答的？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#13", "book/chapter3.md#14"], "note": "候选；使用 RAG 的中文释义和口语化描述，不直接出现缩写；待人工审核"}
+{"id": "q069", "question": "文档切片和 chunk 是一回事吗？为什么切片会影响检索效果？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter3.md#14", "book/chapter3.md#15"], "note": "候选；用切片指代分块，用口语化问法测试 chunking 语义理解；待人工审核"}
+{"id": "v2q01", "question": "书中把 Agent 的工具分为哪五类？", "type": "fact", "gold_chunk_ids": ["book/chapter4.md#1"], "note": "M0 新增；ch4 工具分类总览表，五类工具的调用方向与作用对象"}
+{"id": "v2q02", "question": "MCP 采用什么架构？服务器和客户端各自承担什么角色？", "type": "term", "gold_chunk_ids": ["book/chapter4.md#10"], "note": "M0 新增；ch4 工具生态：MCP 与 Skill Hub，客户端-服务器架构说明"}
+{"id": "v2q03", "question": "为什么说代码生成不只是工具，而是 Agent 的一种元能力？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter5.md#0", "book/chapter4.md#4"], "note": "M0 新增；ch5 开篇与 ch4 通用执行器一节互补，考跨章同义表达"}
+{"id": "v2q04", "question": "为什么 Manus、OpenClaw 这类通用 Agent 内部仍以 Coding 能力为核心？", "type": "fact", "gold_chunk_ids": ["book/chapter5.md#4"], "note": "M0 新增；ch5 案例：从 Manus 到 OpenClaw，任务边界不确定时靠代码生成扩展能力边界"}
+{"id": "v2q05", "question": "异步与事件驱动、语音、Computer Use、机器人操作共享哪一组系统原语？", "type": "fact", "gold_chunk_ids": ["book/chapter6.md#45"], "note": "M0 新增；ch6 本章小结明确列出唤醒、安全点、取消、抢占、快慢分离"}
+{"id": "v2q06", "question": "Computer Use 的视觉定位有哪两条主要路线？它们各自如何把截图变成可点击的目标？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter6.md#29", "book/chapter6.md#30"], "note": "M0 新增；需同时覆盖动作空间设计中的两种选择题实现与视觉定位 Grounding 小节"}
+{"id": "v2q07", "question": "Pass@k 与 Pass^k 分别衡量什么？各自适合什么场景？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter7.md#7", "book/chapter7.md#8"], "note": "M0 新增；ch7 能力上限 vs 业务可靠性两节必须同时命中"}
+{"id": "v2q08", "question": "一个可重复运行的评估环境由哪五个要素构成？", "type": "fact", "gold_chunk_ids": ["book/chapter7.md#8", "book/chapter7.md#9"], "note": "M0 新增；ch7 评估环境的五个组成要素，跨两个 chunk"}
+{"id": "v2q09", "question": "「SFT 记忆，RL 泛化」这句话具体指什么？", "type": "term", "gold_chunk_ids": ["book/chapter8.md#2", "book/chapter8.md#1"], "note": "M0 新增；ch8 开篇对四阶段的概括，含 SFT/RL 能力边界"}
+{"id": "v2q10", "question": "Agent 持续进化的四种方法分别把经验写到哪里？", "type": "fact", "gold_chunk_ids": ["book/chapter9.md#4", "book/chapter9.md#3"], "note": "M0 新增；ch9 四种更新载体：知识文档、提示词/Skill、程序、模型参数"}
+{"id": "v2q11", "question": "三层轨迹验证分别回答哪三个问题？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter9.md#1", "book/chapter9.md#2"], "note": "M0 新增；ch9 图9-2 三层验证结构，结果层与过程层分散在两个 chunk"}
+{"id": "v2q12", "question": "多 Agent 协作的失败模式被归纳为多少种？分为哪三大类？", "type": "fact", "gold_chunk_ids": ["book/chapter10.md#38", "book/chapter10.md#39"], "note": "M0 新增；注意书中是 14 种 / 三大类，不是「六种」，题面按原文写"}
+{"id": "v2q13", "question": "吴禹的求职方向是什么？主要技术栈有哪些？", "type": "fact", "gold_chunk_ids": ["personal/knowledge/profile.md#0"], "note": "M0 新增；个人资料链路，验证 personal/ 前缀可被正常召回"}
+{"id": "v2q14", "question": "SPMTrack 是一个什么样的项目？吴禹在其中负责哪些部分？", "type": "fact", "gold_chunk_ids": ["personal/knowledge/spmtrack.md#0"], "note": "M0 新增；个人项目资料，与旧站全量注入链路形成对照"}
+{"id": "v2q15", "question": "吴禹在华侨大学有哪些校园经历与职务？", "type": "multi_hop", "gold_chunk_ids": ["personal/src/content/experiences/debate-team.md#0", "personal/src/content/experiences/student-union.md#0"], "note": "M0 新增；跨两个经历文件，考个人资料的多跳召回"}

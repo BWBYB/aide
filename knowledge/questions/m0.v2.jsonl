@@ -1,0 +1,15 @@
+{"id": "v2q01", "question": "书中把 Agent 的工具分为哪五类？", "type": "fact", "gold_chunk_ids": ["book/chapter4.md#1"], "note": "M0 新增；ch4 工具分类总览表，五类工具的调用方向与作用对象"}
+{"id": "v2q02", "question": "MCP 采用什么架构？服务器和客户端各自承担什么角色？", "type": "term", "gold_chunk_ids": ["book/chapter4.md#10"], "note": "M0 新增；ch4 工具生态：MCP 与 Skill Hub，客户端-服务器架构说明"}
+{"id": "v2q03", "question": "为什么说代码生成不只是工具，而是 Agent 的一种元能力？", "type": "semantic_rewrite", "gold_chunk_ids": ["book/chapter5.md#0", "book/chapter4.md#4"], "note": "M0 新增；ch5 开篇与 ch4 通用执行器一节互补，考跨章同义表达"}
+{"id": "v2q04", "question": "为什么 Manus、OpenClaw 这类通用 Agent 内部仍以 Coding 能力为核心？", "type": "fact", "gold_chunk_ids": ["book/chapter5.md#4"], "note": "M0 新增；ch5 案例：从 Manus 到 OpenClaw，任务边界不确定时靠代码生成扩展能力边界"}
+{"id": "v2q05", "question": "异步与事件驱动、语音、Computer Use、机器人操作共享哪一组系统原语？", "type": "fact", "gold_chunk_ids": ["book/chapter6.md#45"], "note": "M0 新增；ch6 本章小结明确列出唤醒、安全点、取消、抢占、快慢分离"}
+{"id": "v2q06", "question": "Computer Use 的视觉定位有哪两条主要路线？它们各自如何把截图变成可点击的目标？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter6.md#29", "book/chapter6.md#30"], "note": "M0 新增；需同时覆盖动作空间设计中的两种选择题实现与视觉定位 Grounding 小节"}
+{"id": "v2q07", "question": "Pass@k 与 Pass^k 分别衡量什么？各自适合什么场景？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter7.md#7", "book/chapter7.md#8"], "note": "M0 新增；ch7 能力上限 vs 业务可靠性两节必须同时命中"}
+{"id": "v2q08", "question": "一个可重复运行的评估环境由哪五个要素构成？", "type": "fact", "gold_chunk_ids": ["book/chapter7.md#8", "book/chapter7.md#9"], "note": "M0 新增；ch7 评估环境的五个组成要素，跨两个 chunk"}
+{"id": "v2q09", "question": "「SFT 记忆，RL 泛化」这句话具体指什么？", "type": "term", "gold_chunk_ids": ["book/chapter8.md#2", "book/chapter8.md#1"], "note": "M0 新增；ch8 开篇对四阶段的概括，含 SFT/RL 能力边界"}
+{"id": "v2q10", "question": "Agent 持续进化的四种方法分别把经验写到哪里？", "type": "fact", "gold_chunk_ids": ["book/chapter9.md#4", "book/chapter9.md#3"], "note": "M0 新增；ch9 四种更新载体：知识文档、提示词/Skill、程序、模型参数"}
+{"id": "v2q11", "question": "三层轨迹验证分别回答哪三个问题？", "type": "multi_hop", "gold_chunk_ids": ["book/chapter9.md#1", "book/chapter9.md#2"], "note": "M0 新增；ch9 图9-2 三层验证结构，结果层与过程层分散在两个 chunk"}
+{"id": "v2q12", "question": "多 Agent 协作的失败模式被归纳为多少种？分为哪三大类？", "type": "fact", "gold_chunk_ids": ["book/chapter10.md#38", "book/chapter10.md#39"], "note": "M0 新增；注意书中是 14 种 / 三大类，不是「六种」，题面按原文写"}
+{"id": "v2q13", "question": "吴禹的求职方向是什么？主要技术栈有哪些？", "type": "fact", "gold_chunk_ids": ["personal/knowledge/profile.md#0"], "note": "M0 新增；个人资料链路，验证 personal/ 前缀可被正常召回"}
+{"id": "v2q14", "question": "SPMTrack 是一个什么样的项目？吴禹在其中负责哪些部分？", "type": "fact", "gold_chunk_ids": ["personal/knowledge/spmtrack.md#0"], "note": "M0 新增；个人项目资料，与旧站全量注入链路形成对照"}
+{"id": "v2q15", "question": "吴禹在华侨大学有哪些校园经历与职务？", "type": "multi_hop", "gold_chunk_ids": ["personal/src/content/experiences/debate-team.md#0", "personal/src/content/experiences/student-union.md#0"], "note": "M0 新增；跨两个经历文件，考个人资料的多跳召回"}

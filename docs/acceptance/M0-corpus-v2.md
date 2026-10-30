@@ -1,0 +1,111 @@
+# M0 验收：知识层扩容（corpus-v2）
+
+**落在哪个格子**：上下文（外部知识来源）
+**书中依据**：ch3「用户记忆和知识库」——知识库是上下文的一种来源，不是独立模块
+**skill**：`rag-pipeline`
+**为什么排第一**：ch2 的核心论断是"上下文决定能力上限"。当前索引只有 5 份文档 181 chunks，chapter4–10 全不在库内，而工具、评估、进化、多 Agent 的方法论恰好在那 7 章里。
+
+## 一、命令
+
+```bash
+# 1. 环境自检
+make check-env
+# 预期：python 3.11.x / torch 2.x | mps = True / deps = ok / 三个 home 路径均可打印
+
+# 2. 构建索引（首次会加载 Qwen 模型，约 1–3 分钟；已缓存则更快）
+make corpus
+# 预期最后一行：built N chunks -> artifacts/corpus-v2/dense   （N 应 > 400）
+#             bm25 N chunks -> artifacts/corpus-v2/bm25
+
+# 3. 在 v2 索引上重跑旧冻结题集，量出基线漂移
+make eval-v1
+# 预期：生成 docs/eval/retrieval-v2.md，内含 v1 与 v2 指标并排表
+
+# 4. 跑 M0 新增题集（ch4–10 各 1–2 题 + 个人资料 3 题，共 15 题）
+#    前置：artifacts/eval-v2-m0/rewrites.jsonl 需先用旧包 rewrite 生成
+make eval-m0
+# 预期：生成 docs/eval/retrieval-m0-15q.md；E2 Hit@5 应接近 1.0
+
+# 5. 合并 36 题（21 冻结 + 15 新增）—— 这是 M0 的真正判据
+python knowledge/merge_sets.py knowledge/questions/all36.v2.jsonl \
+  "$HOME/Documents/ChatGPT/个人网站/agentbook-rag/evaluation/frozen/questions.v1.test.jsonl" \
+  knowledge/questions/m0.v2.jsonl
+make eval-36
+# 预期：生成 docs/eval/retrieval-36q.md；三种配置的 Hit@5 差值不超过 2 题
+
+# 6. 单独复验向量守卫（构建时已强制执行，此命令用于事后复核）
+python knowledge/ingest_v2.py --verify-only
+# 预期：[verify] 抽样 10 条，最差自相似度 1.0000，exit 0
+# 反例：对旧 v1 索引执行同样命令，会打印多条 [verify][FAIL] 并以 3 退出
+```
+
+失败预期（必须能复现，否则说明错误处理没写）：
+
+```bash
+AIDE_RAG_HOME=/tmp/not-exist make corpus
+# 预期：明确报 "AIDE_RAG_HOME 不存在" 并以非零码退出，不得抛栈
+```
+
+## 二、自动检查
+
+```bash
+make test
+```
+
+必须绿的用例：
+
+- `test_corpus_manifest_has_all_book_files` —— manifest 的 `files` 覆盖 12 个书稿文件
+- `test_chunk_ids_stable_for_old_files` —— chapter1–3 的 `file#index` 与 v1 完全一致（保证旧题集 gold 标注可直接复用）
+- `test_personal_chunks_use_personal_prefix` —— 个人资料来源的 `file` 前缀为 `personal/`
+- `test_manifest_records_sha256` —— 每个源文件都有 sha256，可复核语料未被篡改
+- `test_embeddings_self_consistent` —— 抽样 chunk 的自相似度必须 > 0.999（设 `AIDE_SLOW_TESTS=1` 启用；这是 ADR 0002 的回归守卫）
+
+## 三、人工判断（需要你亲自看）
+
+1. **打开 `docs/eval/retrieval-v2.md`，确认它不是拿 v1 数字复制的。** 重点看 E3 的 Hit@5 与 p50 是否相对 v1（0.857 / 2327ms）发生了变化。若完全一致，说明评估没真正跑在新索引上。
+2. **抽 3 条新题（ch4–10 与个人资料各一条），点开它的 gold chunk，确认原文真的能回答该问题。** 程序只能验证 id 存在，验证不了标注合理性。
+3. **确认个人资料不再走全量注入。** 在 v2 索引里搜 `personal/profile.md`，应能按 chunk 命中，而不是整篇塞进上下文。
+
+## Skill 留痕（必填，空着即未完成）
+
+- 加载：`rag-pipeline`（2026-10-30 正式加载，非读文件代替）
+- 采纳结论：
+  1. **分块参数合规**：skill 给的起点是「每块 256–1024 token、重叠 10%–20%」，本步用 512 token / 64 overlap（12.5%），落在区间内，无需改。
+  2. **三阶段结构一致**：并行召回 → 结果融合 → 神经重排，与旧包 Dense/BM25 → RRF(k=60) → CrossEncoder 完全对应，未改结构。
+  3. **两路得分不可比**：确认 RRF 只看排名、不用原始得分，与 skill 的警告一致。
+  4. **分阶段验收**：E0–E4 五级各自报指标，满足"每一级单独报告才能定位哪一级丢召回"。
+  5. **口径已澄清**：`recall@k` 学术口径（ranx，相关文档召回比例）与书中"命中率"口径不同，报告已加澄清段。
+- 冲突与裁决：
+  1. **固定窗口 vs 结构感知切分**：skill 推荐「递归/结构感知切分，Markdown 首选，生产默认」，并称固定大小切分"仅作基线"。本步沿用固定 512 窗口。**裁决：暂不改**，理由是与 v1 保持同参数才能量出"扩容"这一个变量的影响；已记为 M3 之后的单变量实验候选（见 `docs/status.md`）。
+  2. **重排候选池 20 vs 建议 50**：skill 说"对融合候选池前约 50 个精排"，旧包默认 `candidate-k=20`。**裁决：不改**，因为改候选数会让延迟与指标同时变化，破坏本次对照的可比性；列为后续单变量实验。
+  3. **块与原始上下文脱钩**：skill 指出任何切分都会切断上下文（"'该公司收入增长 3%'——哪家公司？"）。旧包的 `embedding_text` 已在索引期注入 `source_repo/commit/file/heading_path` 前缀，属于 skill 说的"索引期生成上下文前缀"补救，符合。
+- 实测差异：
+  1. **首轮"全线下滑 9–19 个点"的解读被推翻**：那不是扩容代价，而是旧包 `_last_token_pool` 在 left padding 下取错末 token 导致的向量错位。证据：同文本自相似度 `personal/knowledge/profile.md#0` = **0.001**（应为 1.000），"吴禹的求职方向"查不到个人资料。修复见 `docs/adr/0002`。
+  2. **36 题合并（21 冻结 + 15 新增，candidate-k=20）才是本步的判据**：E0 Hit@5 = 0.9444，E2/E3/E4 = 0.9167，E1 = 0.7222；MRR@10 E3 = 0.8123 最高；Recall@20 E2/E3 = 0.9861 最高。
+  3. **可下结论的分工**：融合（E2）的价值在扩大候选覆盖（Recall@20 +4.2 点），重排（E3）的价值在排序深度（MRR +10.2 点 / nDCG +9.3 点 对 E2），**两者都不体现在 Top-5 命中率**。E0 的 Hit@5 最高（0.9444），但那是 36 题里 1–2 题的差，且 E0 的 Recall@20 最低。
+  4. **candidate-k 20→50 实验证伪了"池子太小"的猜测**：Hit@5 0.9167→0.8889（−1 题），MRR 0.8123→0.8100，nDCG 0.7968→0.7976，p50 2265ms→**5602ms（×2.5）**。**收益为零、延迟翻倍**，池子大小不是 E2>E3 的原因。
+  5. skill 提到的「检索失败率（正确信息不在 top-20）」本步未算，属缺口，M5 前补。
+  6. **混杂未消除**：v1 基线本身跑在带缺陷的索引上，两列差值 = 扩容 + 修 bug，不能归因单一变量。
+
+## 四、拒绝条件（任一命中即不通过）
+
+- `make corpus` 未真正重建，而是复制或链接了 v1 的 `artifacts/`。
+- 报告中出现"提升/下降 X%"却未标注这是跨语料版本比较、不可直接相减。
+- 新增章节的 chunk 数为 0，或 personal 前缀缺失。
+- 未记录扩容代价（BM25 的 IDF 与平均文档长度已变，Dense 竞争者变多）。
+- 任何上游仓库（书仓库、旧 RAG 仓库）文件被修改。
+- **向量守卫只在测试里、且默认跳过**：守卫必须落在构建路径上，失败即拒绝产出索引。
+- **用"只差 1 题"论证结论为真**：样本量不允许，任何 1 题差都应标为"方向可疑"。
+- **归因只解释了一半**：说"融合伤召回"却只看 E2→E3，而最大落差在 E0→E2；或反过来说"融合到满分"却不提小样本天花板。
+
+## 五、本步的诚实点
+
+> **验收口径已调整**：不以"对比 v1 漂移"为准，而是「v2 在 36 题上的绝对水平 + 新增覆盖 + 人工抽查」。
+>
+> 原因是：要得到洁净的 v1 基线，得用修好的代码按 v1 参数重建 181 chunks 索引（约 20 分钟），
+> 收益只是让一个历史差值能相减。更划算的做法是把"扩容净效应"明确标为**未测**，
+> 交给 M5 任务层回答——M5 本来就要建 40+ 题任务集，那时自然覆盖到。
+>
+> 同理，**"差 1 题"永远不能用来论证"真实"**。15 题上 1 题 = 0.067，McNemar b=1/c=0 → p=1.0，
+> 那恰恰是最无法排除噪声的情形。正确写法是「方向可疑，待更大样本确认」。
+> 结论强度必须与样本量匹配，否则 M5 的置信区间规则就成了装饰。

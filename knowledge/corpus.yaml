@@ -1,0 +1,51 @@
+# corpus-v2 语料定义
+#
+# 两类来源：
+#   book/   —— 面向所有读者的共享知识（走 RAG）
+#   personal/ —— 单用户的个人资料中「可公开陈述」的部分（走 RAG）
+# 边界依据 memory-system skill：个性化偏好/身份/进度走记忆系统，不在此处。
+
+chunk_size_tokens: 512
+overlap_tokens: 64
+
+sources:
+  book:
+    root: ${BOOK_HOME}/book
+    prefix: book
+    source_repo: bojieli/ai-agent-book
+    source_url: https://github.com/bojieli/ai-agent-book
+    commit: dbc046eb896ac4e39aa19c7774c8bf49583b89a6
+    files:
+      - introduction.md
+      - chapter1.md
+      - chapter2.md
+      - chapter3.md
+      - chapter4.md
+      - chapter5.md
+      - chapter6.md
+      - chapter7.md
+      - chapter8.md
+      - chapter9.md
+      - chapter10.md
+      - afterword.md
+    excluded:
+      - reference-answers.md
+    notes: >-
+      reference-answers.md 保留作人工标注与评估参考，不进主索引，避免答案泄漏。
+
+  personal:
+    root: ${PERSONAL_HOME}
+    prefix: personal
+    source_repo: local-personal-profile
+    source_url: null
+    commit: local-working-tree
+    globs:
+      - knowledge/profile.md
+      - knowledge/spmtrack.md
+      - src/content/profile.md
+      - src/content/projects/*.md
+      - src/content/experiences/*.md
+      - src/content/posts/*.md
+    notes: >-
+      个人资料的「简历事实、项目说明、经历、技术博客」。不含简历 PDF 与
+      docs/superpowers 下的内部设计文档（含实施计划，属工程记录而非事实陈述）。

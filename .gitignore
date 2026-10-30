@@ -1,0 +1,15 @@
+.env
+.env.local
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# 索引与轨迹属于可再生/可积累的运行产物，不入库
+artifacts/
+evals/runs/
+traces/

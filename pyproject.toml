@@ -1,0 +1,44 @@
+[project]
+name = "aide"
+version = "0.1.0"
+description = "AIDE —— 学习与求职双轨的个人 Agent（Agent = LLM + 上下文 + 工具，Harness 是竞争力）"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "apscheduler>=3.10",
+  "jsonschema>=4.22",
+  "httpx>=0.27",
+  "pyyaml>=6.0",
+  "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# 知识层（检索）依赖，仅在构建/查询索引时需要
+retrieval = [
+  "torch>=2.3",
+  "transformers>=4.44",
+  "rank-bm25>=0.2.2",
+  "ranx>=0.3.20",
+]
+eval = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aide"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
