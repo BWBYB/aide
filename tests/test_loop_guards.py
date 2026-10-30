@@ -14,13 +14,14 @@ import pytest
 from aide.core.context import Prefix, ToolSpec
 from aide.core.loop import (
     Limits,
+    LoopError,
     LoopResult,
     RunState,
     StopReason,
     check_limits,
     run_loop,
 )
-from aide.core.verifier import PYTHON_FILE_BASELINE, verify
+from aide.core.verifier import PYTHON_FILE_BASELINE, verify, verify_all
 from fakes import FakeProvider, ManualClock, ModelResponse
 
 START = datetime(2026, 10, 30, 15, 0, 0)
@@ -160,6 +161,34 @@ def test_verifier_rejects_obviously_bad_output() -> None:
 
     good = verify("def run() -> int:\n    return 1\n", PYTHON_FILE_BASELINE)
     assert good.ok, f"合格产物被误判：{good.reason()}"
+
+
+@pytest.mark.unit
+def test_verify_all_without_baselines_is_not_pass() -> None:
+    """空基线不得默认通过。
+
+    `verify_all(x, [])` 的循环体不执行 → failures 为空 → 原本会返回 ok=True，
+    与 `verify(x, None)` 走 VERIFICATION_UNAVAILABLE 的语义相反。
+    这是"空实现能过"的变体：没有验收标准时，"通过"没有依据。
+    """
+    result = verify_all("print(1)\n", [])
+    assert not result.ok
+    assert result.baseline == "<none>"
+    assert any("没有可用的验收基线" in item for item in result.failures)
+
+
+@pytest.mark.unit
+def test_limits_separates_budget_from_context_window() -> None:
+    """累计预算与单次窗口是两个字段，压缩阈值只由后者决定。"""
+    limits = Limits(max_turns=5, max_tokens=200_000, max_seconds=60, context_window=8_000)
+    assert limits.compression_threshold() == 6_400, "阈值应按单次窗口 80% 计算"
+
+    # 只改累计预算，不应影响压缩阈值（否则两者已被混用）
+    other = Limits(max_turns=5, max_tokens=1_000_000, max_seconds=60, context_window=8_000)
+    assert other.compression_threshold() == limits.compression_threshold()
+
+    with pytest.raises(LoopError):
+        Limits(context_window=0)
 
 
 @pytest.mark.unit

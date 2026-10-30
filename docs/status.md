@@ -154,6 +154,15 @@
 - 计数：`40 passed, 2 skipped`；spec 44 条；出处 36 行号 / 8 自定 / 完整。
 - 下一项：C 组压缩。
 
+### 2026-10-30：补两条适用边界（M1 清单 44 → 45）
+- 更新位置：`src/aide/core/loop.py`、`verifier.py`、`tests/test_loop_guards.py`、`docs/acceptance/M1-harness-core.md`
+- **① 墙钟超时的边界**：`check_limits` 只在**两次调用之间**被检查，`now` 是参数，防的是"多次慢调用累积超预算"。隐含前提是**每次调用都会返回**——若连接建立后不再吐数据，`now` 不更新，`max_seconds` **永不触发**。已写进 `check_limits` docstring 与清单描述：单次调用挂起由 D 组 `test_stream_idle_watchdog_kills_stalled_stream` 负责，两者互补不重复。这条不写清，半年后会误以为"墙钟超时已测 = 卡死也覆盖了"。
+- **② `verify_all` 空基线漏洞（真 bug）**：`verify_all(x, [])` 循环体不执行 → `failures` 为空 → 返回 `ok=True`，与 `verify(x, None)` 走 `VERIFICATION_UNAVAILABLE` 的语义相反。已加分支返回 `ok=False / baseline="<none>" / "没有可用的验收基线"`，并配 `test_verify_all_without_baselines_is_not_pass`。这是"空实现能过"的变体。
+- **③ C 组前置**：`Limits` 增加 `context_window: int`（默认 128_000）与 `compression_threshold(ratio=0.8)`。`max_tokens`（跨轮次累计预算）与 `context_window`（单次请求窗口）**语义不同不可混用**——混用会让压缩在错误位置触发，而预算耗尽与上下文溢出是两类故障（error-recovery:23 把上下文层单列）。配 `test_limits_separates_budget_from_context_window`：只改 `max_tokens` 不影响阈值。
+- 变异验证：撤掉空基线分支 → 该断言变红；还原后回到绿（41 passed, 2 skipped）。
+- 计数：spec **45 条**（A8+B6+C6+D11+E5+F3+**G6**）；出处 36 行号 / 9 自定 / 完整。
+- 下一项：C 组压缩（阈值 `compression_threshold()` 已就绪）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

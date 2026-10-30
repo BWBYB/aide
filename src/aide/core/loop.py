@@ -50,13 +50,31 @@ class Stop:
 
 @dataclass(frozen=True)
 class Limits:
+    """运行上限。
+
+    两个 token 相关的字段语义不同，**不可混用**：
+    - `max_tokens`：跨轮次**累计预算**，撞到即终止整个运行；
+    - `context_window`：**单次请求**的窗口大小，压缩阈值按它算（80%）。
+
+    混用会让压缩在错误的位置触发：预算耗尽与上下文溢出是两类故障
+    （error-recovery:23 把上下文层单列）。
+    """
+
     max_turns: int = 8
     max_tokens: int = 200_000
     max_seconds: float = 300.0
+    context_window: int = 128_000
 
     def __post_init__(self) -> None:
-        if self.max_turns <= 0 or self.max_tokens <= 0 or self.max_seconds <= 0:
-            raise LoopError("三重闸门都必须为正数")
+        for name in ("max_turns", "max_tokens", "max_seconds", "context_window"):
+            if getattr(self, name) <= 0:
+                raise LoopError(f"{name} 必须为正数")
+
+    def compression_threshold(self, ratio: float = 0.8) -> int:
+        """压缩触发点：单次请求窗口的 80%（compress:49）。"""
+        if not 0 < ratio < 1:
+            raise LoopError("压缩阈值比例必须在 (0, 1) 之间")
+        return int(self.context_window * ratio)
 
 
 @dataclass
@@ -70,7 +88,14 @@ class RunState:
 
 
 def check_limits(state: RunState, limits: Limits, now: datetime) -> Stop | None:
-    """三重闸门。顺序固定：轮次 → 预算 → 墙钟，保证同一状态有确定结论。"""
+    """三重闸门。顺序固定：轮次 → 预算 → 墙钟，保证同一状态有确定结论。
+
+    **`max_seconds` 的适用边界**：`now` 是参数，所以本闸门只在**两次调用之间**被检查，
+    防的是"多次慢调用累积超预算"。它的隐含前提是**每次调用都会返回**——
+    若 provider 建立连接后再也不吐数据，`now` 不会更新，这条闸门永不触发。
+    单次调用永久挂起属于 D 组的空闲看门狗（`test_stream_idle_watchdog_kills_stalled_stream`），
+    两者互补，不重复。
+    """
     if state.turns >= limits.max_turns:
         return Stop(StopReason.TURN_LIMIT, f"轮次耗尽：{state.turns}/{limits.max_turns}")
     if state.tokens_used >= limits.max_tokens:

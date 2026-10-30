@@ -38,7 +38,7 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1 可执行 44 条**（A8 + B6 + C6 + D11 + E5 + F3 + G5）。
+按声明的 skill 分组，**M1 可执行 45 条**（A8 + B6 + C6 + D11 + E5 + F3 + G6）。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之三、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
@@ -125,9 +125,10 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 |---|---|---|---|
 | `test_turn_limit_terminates_with_reason` | 轮次耗尽返回结构化终止原因并落轨迹，不得静默返回空答案 | M1 | **自定**（M0 回归补回） |
 | `test_budget_limit_terminates` | token 预算耗尽停止，不抛异常，返回部分结果+原因 | M1 | **自定** |
-| `test_timeout_limit_terminates` | 墙钟超时生效，已完成步骤轨迹不丢 | M1 | **自定** |
+| `test_timeout_limit_terminates` | 墙钟超时生效，已完成步骤轨迹不丢。**仅覆盖"多次慢调用累积超预算"**；单次调用永久挂起由 D 组 `test_stream_idle_watchdog_kills_stalled_stream` 负责，`max_seconds` 对此无效 | M1 | **自定** |
 | `test_completion_claim_requires_verifier` | 模型自称完成不得直接终止；须经 verifier 判定 | M1 | loop-engineering:17,19 |
 | `test_verifier_rejects_obviously_bad_output` | `verify(artifact, baseline)`；空文件/语法错误/只改注释 → False 且给出可定位原因 | M1 | loop-engineering:18 |
+| `test_verify_all_without_baselines_is_not_pass` | 多基线合并时**空基线不得默认通过**（循环体不执行 → failures 为空 → 原本会 ok=True，与单基线走 `VERIFICATION_UNAVAILABLE` 的语义相反） | M1 | **自定**（"空实现能过"变体） |
 
 > 后两条必须成对：前者只证明「verifier 在环内」，一个永远返回 True 的空实现同样能过；
 > 后者才证明「verifier 有区分力」。且必须在写 verifier 之前定稿。

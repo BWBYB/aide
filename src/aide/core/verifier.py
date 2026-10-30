@@ -107,7 +107,19 @@ def verify(artifact: Any, baseline: Baseline) -> Verification:
 
 
 def verify_all(artifact: Any, baselines: Sequence[Baseline]) -> Verification:
-    """多基线合并判定：任一不过即整体不过，失败原因全部保留。"""
+    """多基线合并判定：任一不过即整体不过，失败原因全部保留。
+
+    **空基线不得默认通过**：没有验收标准时，"通过"这个结论没有依据。
+    这是"空实现能过"的变体——循环体不执行 → failures 为空 → ok=True，
+    与 `verify(x, None)` 走 VERIFICATION_UNAVAILABLE 的语义相反。
+    """
+    if not baselines:
+        return Verification(
+            ok=False,
+            baseline="<none>",
+            failures=("没有可用的验收基线：无法判定完成",),
+        )
+
     failures: tuple[Failure, ...] = ()
     for baseline in baselines:
         result = verify(artifact, baseline)
