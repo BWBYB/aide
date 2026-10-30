@@ -87,3 +87,14 @@ test:
 .PHONY: status
 status:
 	@cat docs/status.md
+
+# 改完验收清单先跑这个：对比上一版断言集合，一行看出有没有丢
+# 注意 comm 要求输入已排序，忘记 sort -u 会静默给出错误结果。
+SPEC ?= docs/acceptance/M1-harness-core.md
+.PHONY: check-spec-diff
+check-spec-diff:
+	@git show HEAD~1:$(SPEC) 2>/dev/null | grep -oE "test_[a-z_]+" | sort -u > /tmp/spec-old.txt || true
+	@grep -oE "test_[a-z_]+" $(SPEC) | sort -u > /tmp/spec-new.txt
+	@echo "旧有今无（疑似丢失）："; comm -23 /tmp/spec-old.txt /tmp/spec-new.txt
+	@echo "今有旧无（新增或改名）："; comm -13 /tmp/spec-old.txt /tmp/spec-new.txt
+	@echo "当前条数：$$(wc -l < /tmp/spec-new.txt | tr -d ' ')"

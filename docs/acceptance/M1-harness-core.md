@@ -35,7 +35,7 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，共 **31 条**（A5 + B5 + C5 + D6 + E4 + F2 + G4）。
+按声明的 skill 分组，共 **32 条**（A5 + B5 + C5 + D6 + E4 + F2 + G5）。
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider）。
 
 ### A. 上下文与缓存（`context-engineering`、`kv-cache-design`）
@@ -95,7 +95,7 @@ make test
 | `test_all_entry_modules_registered` | `src/` 下新增任何模块文件都必须出现在 `ENTRY_MODULES` 里，否则测试红 |
 | `test_offline_applied_before_sdk_import` | 每个入口模块在干净子进程里按自身顺序导入后，`huggingface_hub.constants.HF_HUB_OFFLINE` 为 True |
 
-### G. 预算与终止（`loop-engineering`）
+### G. 预算、终止与验证（`loop-engineering`）
 
 | 断言 | 断言什么 |
 |---|---|
@@ -103,9 +103,40 @@ make test
 | `test_budget_limit_terminates` | token 预算耗尽时停止，**不抛异常**，返回部分结果 + 预算耗尽原因 |
 | `test_timeout_limit_terminates` | 墙钟超时生效，且**已完成步骤的轨迹不丢** |
 | `test_completion_claim_requires_verifier` | 模型自称完成**不得**直接终止循环；必须经 `verifier` 判定，未通过则继续或带原因终止 |
+| `test_verifier_rejects_obviously_bad_output` | 构造明显不满足验收基线的产物（空文件 / 语法错误的脚本 / 只改注释的补丁），断言 verifier 返回 **False** 并给出**可定位原因**（哪个基线项不满足） |
 
-> 这一组是「约束」格子的核心。没有它们，防不住循环停不下来、token 失控与"假成功"。
-> 三条都需要构造资源耗尽场景，是 M1 里工作量最大的断言。
+> 这一组是「约束」格子的核心。没有前三条，防不住循环停不下来与 token 失控；
+> 没有后两条，防不住"假成功"。
+>
+> **后两条必须成对**：`..._requires_verifier` 只证明「verifier 在环内」，不证明「verifier 判得对」。
+> 一个永远返回 True 的空实现能让它全绿。`..._rejects_obviously_bad_output` 才证明 verifier 有**区分力**。
+> `loop-engineering` 的原话：**验证不可靠时，循环转得越快，只是把劣质产出更快地标记为完成。**
+>
+> 且这条**必须在写 verifier 之前定稿**——否则会退化成"实现写成什么样，断言就迁就成什么样"。
+
+## 三之二、实现顺序与依赖（施工图）
+
+断言可以平铺，实现不能平铺。只列**有前置依赖**的条目，未列出的视为无依赖。
+
+**全局实现顺序**：
+A（前缀与消息结构）→ B（状态栏）→ G（闸门与验证）→ C（压缩）→ D（故障恢复）→ E（执行边界）→ F（入口登记）
+
+| 断言 | 依赖 | 为什么 |
+|---|---|---|
+| `test_budget_limit_terminates` | LLM 客户端的 token 用量计量 | 没有计量就无法在预算耗尽时准确停下 |
+| `test_state_bar_survives_compression` | B 状态栏 + C 压缩 | 两样都在才能测交叉行为，单独实现任一项都测不了 |
+| `test_compression_is_layered_light_to_heavy` | C 至少三种策略（截断 / 摘要 / 子 Agent 隔离） | 只有一种策略时"由轻到重"无意义 |
+| `test_status_bar_only_compression_is_refused` | C 的压缩入口统一收口 | 收口了才能拦"只剩状态栏"的极端策略 |
+| `test_circuit_breaker_opens_then_half_opens` | D 的故障分类能区分"连续失败" | 分类不到位就无法判定何时开熔断 |
+| `test_fallback_and_circuit_events_recorded` | `runtime/trace` 可用 | 没有轨迹就没有写入目标 |
+| `test_stream_interruption_resumes_from_last_block` | D 的块级流式解析 | 不按块解析就无法定位"最后一个完整块" |
+| `test_completion_claim_requires_verifier` | `core/verifier` 接口存在 | 先有接口才能断言"调用过" |
+| `test_verifier_rejects_obviously_bad_output` | E 的「每个任务声明验收基线」 | 没有基线就构造不出"明显不满足基线"的产物 |
+| `test_every_task_declares_acceptance_baseline` | 任务注册机制 | 无注册点则无处校验 |
+
+**规则（防"顺手改软"）**：后实现的功能**不得**顺手放宽前面的断言。
+某条暂时测不了时，标 `xfail` 并写明原因与解除条件，**不得删除或改软**——
+这条正是 M1 这次丢 3 条断言的直接教训。
 
 ## 四、人工判断
 

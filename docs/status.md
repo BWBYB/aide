@@ -68,6 +68,14 @@
 - 验证：登记拦截实测有效——新建 `src/aide/llm/client.py` 后测试报 `assert not {'aide.llm.client'}`，删除后 `8 passed, 1 skipped`。
 - 下一项：② 加载 6 个 skill 并填留痕。
 
+### 2026-10-30：M1 清单加验证器配对断言与依赖图（31 → 32）
+- 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
+- **新增 `test_verifier_rejects_obviously_bad_output`**：构造空文件 / 语法错误的脚本 / 只改注释的补丁，断言 verifier 返回 False 并给出可定位原因。理由：`test_completion_claim_requires_verifier` 只证明「verifier 在环内」，一个永远返回 True 的空实现同样能通过；必须有一条证明「verifier 有区分力」。G 组因此改名为「预算、终止与验证」，两条件必须成对，且**必须在写 verifier 之前定稿**，否则会退化成"实现写成什么样、断言就迁就成什么样"。
+- **新增「三之二、实现顺序与依赖（施工图）」**：给出全局顺序 A→B→G→C→D→E→F，并列出 10 条有前置依赖的断言及其依赖项与原因（如 `test_state_bar_survives_compression` 依赖状态栏+压缩两样都在）。附规则：后做的功能**不得顺手放宽**前面的断言，测不了就标 `xfail` 写明解除条件，不得删除或改软。
+- **新增 `make check-spec-diff`**：对比上一版验收清单的断言集合，输出"旧有今无 / 今有旧无 / 当前条数"。注意 `comm` 要求输入已排序，漏 `sort -u` 会静默给出错误结果——这类工具坑本身也是静默失效，故固化成目标而非靠手敲。实测输出 `当前条数：32`。
+- 与预期的偏差：上一版把 `test_verifier_rejects_obviously_bad_output` 这类"区分力"断言漏掉了，只留下"调用过"的断言；这属于**断言强度不足**，比数量缺失更难发现。
+- 下一项：② 加载 6 个 skill 并填留痕。
+
 ### 2026-10-30：M1 清单回归修正（补回 3 条终止断言，27 → 31）
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`AGENTS.md`、`docs/status.md`
 - **回归事实**：上一版重排时丢掉 3 条断言——`test_turn_limit_terminates_with_reason`、`test_budget_limit_terminates`、`test_timeout_limit_terminates`。用 `comm -23` 对比 `933776f` 与 `569dfe1` 确认；同时 `test_state_bar_appended_not_prepended`、`test_offline_env_set_after/sdk_import` 两条是**改名**（非删除）。
