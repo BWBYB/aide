@@ -80,6 +80,18 @@ eval-36-k50:
 verify-index:
 	$(AIDE_PY) knowledge/ingest_v2.py --verify-only
 
+# 出处覆盖：每条断言必须标 skill:行号 或「自定」
+# 与 check-spec-diff 成对：一个查「有没有少」，一个查「有没有编」
+.PHONY: check-provenance
+check-provenance:
+	@awk '/^## 三、自动检查/,/^## 三之二/' $(SPEC) | grep -E '^\| `test_' > /tmp/spec-rows.txt
+	@echo "断言行数：$$(wc -l < /tmp/spec-rows.txt | tr -d ' ')"
+	@echo "有行号：$$(grep -cE '[a-z-]+:[0-9]' /tmp/spec-rows.txt | tr -d ' ')"
+	@echo "标自定：$$(grep -c '自定' /tmp/spec-rows.txt | tr -d ' ')"
+	@grep -vE '[a-z-]+:[0-9]|自定' /tmp/spec-rows.txt > /tmp/spec-bad.txt || true
+	@test ! -s /tmp/spec-bad.txt || { echo "[error] 以下断言既无行号也未标自定："; cat /tmp/spec-bad.txt; exit 1; }
+	@echo "出处覆盖：完整"
+
 .PHONY: test
 test:
 	$(AIDE_PY) -m pytest

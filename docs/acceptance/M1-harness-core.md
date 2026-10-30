@@ -124,8 +124,8 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 | `test_turn_limit_terminates_with_reason` | 轮次耗尽返回结构化终止原因并落轨迹，不得静默返回空答案 | M1 | **自定**（M0 回归补回） |
 | `test_budget_limit_terminates` | token 预算耗尽停止，不抛异常，返回部分结果+原因 | M1 | **自定** |
 | `test_timeout_limit_terminates` | 墙钟超时生效，已完成步骤轨迹不丢 | M1 | **自定** |
-| `test_completion_claim_requires_verifier` | 模型自称完成不得直接终止；须经 verifier 判定 | M1 | loop-engineering |
-| `test_verifier_rejects_obviously_bad_output` | `verify(artifact, baseline)`；空文件/语法错误/只改注释 → False 且给出可定位原因 | M1 | loop-engineering |
+| `test_completion_claim_requires_verifier` | 模型自称完成不得直接终止；须经 verifier 判定 | M1 | loop-engineering:17,19 |
+| `test_verifier_rejects_obviously_bad_output` | `verify(artifact, baseline)`；空文件/语法错误/只改注释 → False 且给出可定位原因 | M1 | loop-engineering:18 |
 
 > 后两条必须成对：前者只证明「verifier 在环内」，一个永远返回 True 的空实现同样能过；
 > 后者才证明「verifier 有区分力」。且必须在写 verifier 之前定稿。
@@ -179,7 +179,8 @@ A（前缀与消息结构）→ B（状态栏）→ G（闸门与验证）→ C�
 
 - 加载（2026-10-30 全部正式加载）：`context-engineering`、`kv-cache-design`、`agent-state-bar`、`context-compression`、`error-recovery`、`coding-agent-harness`
 - 采纳结论：见各表「出处」列，逐条标注 `skill:行号`。
-  共 20 条结论落地为 45 条断言中的 33 条；其余 12 条标注为**自定**，属本仓机制或工程判断，无 skill 出处。
+  M1 可执行 43 条中：**35 条有行号、8 条标自定、0 条缺失**（`make check-provenance` 可复核）。
+  此前写"33 条有行号 / 12 条自定"是错的——两者相加 45 与 43 不符，实际是 2 条只写了 skill 名没写行号，被用户按"既无行号也未标自定 = 不通过"查出。
 - 冲突与裁决：
 
   1. **D 组四层命名错误（已改）**：原写"传输/协议/工具/语义"，skill 明确为 **API/工具/上下文/控制流**（error-recovery:19-24）。按 skill 改，不保留臆造口径。
@@ -190,7 +191,10 @@ A（前缀与消息结构）→ B（状态栏）→ G（闸门与验证）→ C�
 - 实测差异：
   1. 加载 skill 前 32 条，加载后 M1 可执行 43 条、外移 7 条。净增不是凑数：每条可指回具体行号。
   2. **2 处口径是 skill 直接纠正的**，不是我的判断——说明"凭印象写规格"会在最基础的名词上出错，且能通过所有下游检查（下游查的是"实现符合规格"，不查"规格符合现实"）。
-  3. 出处列暴露了 12 条**自定**条目，其中 `test_policy_denies_symlink_escape` 完全没有原文支撑，属我加的工程判断，需下次审查优先复核。
+  3. 出处列暴露了 8 条**自定**条目，其中 `test_policy_denies_symlink_escape` 完全没有原文支撑，属我加的工程判断，需下次审查优先复核。
+  4. 另有 2 条只写了 skill 名未写行号（`test_completion_claim_requires_verifier`、`test_verifier_rejects_obviously_bad_output`），
+     违反本规格自己的规则「既无行号也未标自定 = 不通过」。补行号后为 35 / 8 / 0。
+     **审查建议本身也要过同一道检验**——这两条正是上一轮审查提出的建议。
 
 ## 六、拒绝条件（任一命中即不通过）
 
