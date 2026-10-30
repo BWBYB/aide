@@ -9,6 +9,15 @@ from .context import (
     wrap_state_bar,
 )
 from .message import Msg, ToolCall
+from .state_bar import (
+    ErrorSummary,
+    StateBarError,
+    SystemState,
+    TodoItem,
+    TraceSummary,
+    build_state_bar,
+    state_bar_payload,
+)
 
 __all__ = [
     "Msg",
@@ -19,4 +28,11 @@ __all__ = [
     "render_request",
     "wrap_state_bar",
     "message_bytes",
+    "TraceSummary",
+    "TodoItem",
+    "ErrorSummary",
+    "SystemState",
+    "StateBarError",
+    "build_state_bar",
+    "state_bar_payload",
 ]

@@ -37,6 +37,7 @@ ENTRY_MODULES = [
     "eval_v2",
     "aide.core.message",
     "aide.core.context",
+    "aide.core.state_bar",
 ]
 
 PROBE = r"""

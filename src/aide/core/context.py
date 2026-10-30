@@ -155,8 +155,13 @@ def render_request(
 
 
 def message_bytes(messages: Iterable[Msg]) -> bytes:
-    """把 messages 序列化成稳定字节，用于逐字节比对。"""
+    """把 messages 序列化成稳定字节，用于逐字节比对。
+
+    `sort_keys=True` 与 `Prefix.canonical_bytes()` 保持同一口径：
+    键序不应依赖 `to_dict()` 的书写顺序——否则将来给 Msg 加一个可选字段，
+    序列化结果会静默漂移，而所有"逐字节一致"的断言都不会报错。
+    """
     payload = [msg.to_dict() for msg in messages]
     return json.dumps(
-        payload, ensure_ascii=False, sort_keys=False, separators=(",", ":")
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
