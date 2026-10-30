@@ -101,6 +101,22 @@ make test
   6. skill 提到的「检索失败率（正确信息不在 top-20）」本步未算，属缺口，M5 前补。
   7. **混杂未消除**：v1 基线本身跑在带缺陷的索引上，两列差值 = 扩容 + 修 bug，不能归因单一变量。
 
+## 已知遗留（勾选时明确记录，免得下一个人以为已经守住）
+
+1. **离线时序断言的口径问题（已修，但留证）**：原断言在**进程内**导入 `loader` 后检查
+   `os.environ["HF_HUB_OFFLINE"]`。实测证明这个断言有盲区——先 `import transformers` 再 `import loader` 时：
+
+   ```
+   constants.HF_HUB_OFFLINE = False      ← SDK 导入期已固化
+   os.environ.HF_HUB_OFFLINE = 1         ← 后设的，旧断言会通过
+   ```
+
+   即**旧断言无法发现顺序被改坏**。已替换为 `tests/test_offline_order.py`（子进程 + 常量版），
+   坏顺序探针实测 `exit=10`。
+2. **残留边界**：新守卫按 `ENTRY_MODULES` 清单逐个子进程探测，目前只含 `ingest_v2`、`eval_v2`。
+   **M1 新增 `aide.llm.client` / `aide.tools.mcp_client` 时必须登记进清单**，否则守卫覆盖不到
+   那个真正会先 `import openai` 的模块。这条是 M1 开工前的硬前置。
+
 ## 四、拒绝条件（任一命中即不通过）
 
 - `make corpus` 未真正重建，而是复制或链接了 v1 的 `artifacts/`。

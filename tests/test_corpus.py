@@ -89,16 +89,8 @@ def test_expand_keeps_unknown_variable_literal() -> None:
     assert ingest_v2._expand("${AIDE_NOT_SET_XYZ}/a") == "${AIDE_NOT_SET_XYZ}/a"
 
 
-@pytest.mark.skipif(
-    bool(os.environ.get("AIDE_ALLOW_HF_NETWORK")),
-    reason="显式允许联网时不做离线断言",
-)
-def test_offline_env_forced_on_import() -> None:
-    """导入 knowledge/loader 后必须已经处于离线模式（见 AGENTS.md 第七节）。"""
-    import loader  # noqa: F401  —— 导入本身就是要验证的行为
-
-    assert os.environ.get("HF_HUB_OFFLINE") == "1"
-    assert os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+# 离线时序的断言已迁到 tests/test_offline_order.py：
+# 进程内断言测不出真实入口模块的导入顺序，改为子进程 + 常量版。
 
 
 @pytest.mark.skipif(
