@@ -23,6 +23,12 @@ import loader
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS = Path(__file__).with_name("corpus.yaml")
+
+# 退出码：把"环境不可用"和"数据错位"分开，CI 与人工排查一眼可辨
+EXIT_OK = 0
+EXIT_CORPUS = 2  # 语料定义/上游路径问题
+EXIT_INDEX_MISMATCH = 3  # 向量与文本错位（数据问题）
+EXIT_UNAVAILABLE = 4  # 模型或索引加载失败（环境/网络问题）
 _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -123,15 +129,26 @@ def build_chunks(corpus: dict[str, Any], model_name: str) -> tuple[list[Any], di
 SELF_SIMILARITY_FLOOR = 0.999
 
 
+class EmbeddingUnavailable(RuntimeError):
+    """嵌入模型或索引无法加载——属于环境问题，必须与"数据错位"区分开。"""
+
+
 def verify_embeddings(dense_dir: Path, *, model_name: str, sample: int = 10) -> dict[str, Any]:
     """构建期守卫：抽样重编码，自相似度必须高于下限。
 
-    这是「静默失效」唯一可靠的拦截点——模型此时已在内存/磁盘缓存里，
-    用 batch_size=1 重编码（无 padding，因此不依赖 pooling 修复本身），
+    这是「静默失效」唯一可靠的拦截点——模型此时已在内存/磁盘缓存里。
+    用 batch_size=1 重编码：单条前向不产生 padding，因此无论上游用 left 还是
+    right padding 的池化实现，结果都一致——**它测的是索引本身，而不是修复是否生效**。
     任何向量与文本的错位都会立刻表现为自相似度远低于 1。
+
+    加载失败（模型缺失、网络、路径错）抛 EmbeddingUnavailable，由调用方映射成
+    独立的退出码，避免和"数据错位"共用一条失败路径。
     """
     core = loader.load_core()
-    index = core.NumpyIndex.load(dense_dir)
+    try:
+        index = core.NumpyIndex.load(dense_dir)
+    except (OSError, ValueError) as error:
+        raise EmbeddingUnavailable(f"索引无法加载：{dense_dir}（{error}）") from error
     total = len(index.chunks)
     # 抽样：首/中/尾 + 最短的若干（最易触发 padding 错位）+ 最长的
     by_length = sorted(range(total), key=lambda i: len(index.chunks[i].text))
@@ -139,12 +156,19 @@ def verify_embeddings(dense_dir: Path, *, model_name: str, sample: int = 10) -> 
     picks.update(by_length[: max(2, sample // 2)])
     picks.update(by_length[-2:])
 
-    embedder = loader.load_embedding().QwenEmbedder(model_name=model_name, batch_size=1)
+    try:
+        embedder = loader.load_embedding().QwenEmbedder(model_name=model_name, batch_size=1)
+    except Exception as error:  # noqa: BLE001 —— 需要把"加载失败"整体归类，不细分异常类型
+        raise EmbeddingUnavailable(f"嵌入模型无法加载：{model_name}（{error}）") from error
+
     worst = 1.0
     failures: list[dict[str, Any]] = []
     for index_in_list in sorted(picks):
         chunk = index.chunks[index_in_list]
-        fresh = embedder.encode_documents([chunk.embedding_text]).numpy()[0]
+        try:
+            fresh = embedder.encode_documents([chunk.embedding_text]).numpy()[0]
+        except Exception as error:  # noqa: BLE001
+            raise EmbeddingUnavailable(f"嵌入推理失败：{error}") from error
         similarity = float(fresh @ index.embeddings[index_in_list])
         worst = min(worst, similarity)
         if similarity <= SELF_SIMILARITY_FLOOR:
@@ -175,11 +199,19 @@ def main() -> int:
 
     if args.verify_only:
         target = args.dense_dir or (args.output_dir / "dense")
-        report = verify_embeddings(target, model_name=args.model)
+        try:
+            report = verify_embeddings(target, model_name=args.model)
+        except EmbeddingUnavailable as error:
+            print(f"[verify][UNAVAILABLE] {error}", file=sys.stderr)
+            print(
+                "提示：默认离线运行；首次下载模型请设 AIDE_ALLOW_HF_NETWORK=1",
+                file=sys.stderr,
+            )
+            return EXIT_UNAVAILABLE
         print(f"[verify] 抽样 {report['checked']} 条，最差自相似度 {report['worst']:.4f}")
         for failure in report["failures"]:
             print(f"[verify][FAIL] {failure}", file=sys.stderr)
-        return 0 if not report["failures"] else 3
+        return EXIT_OK if not report["failures"] else EXIT_INDEX_MISMATCH
 
     started = time.time()
     corpus = _expand(yaml.safe_load(args.corpus.read_text(encoding="utf-8")))
@@ -200,10 +232,18 @@ def main() -> int:
     print(f"[bm25] {len(chunks)} chunks -> {out / 'bm25'}")
 
     if not args.skip_dense:
-        embedding = loader.load_embedding()
-        embedder = embedding.QwenEmbedder(model_name=args.model, batch_size=args.batch_size)
-        texts = [chunk.embedding_text for chunk in chunks]
-        vectors = embedder.encode_documents(texts).numpy()
+        try:
+            embedding = loader.load_embedding()
+            embedder = embedding.QwenEmbedder(model_name=args.model, batch_size=args.batch_size)
+            texts = [chunk.embedding_text for chunk in chunks]
+            vectors = embedder.encode_documents(texts).numpy()
+        except Exception as error:  # noqa: BLE001
+            print(
+                f"[error] 嵌入不可用：{error}\n"
+                "提示：默认离线运行；首次下载模型请设 AIDE_ALLOW_HF_NETWORK=1",
+                file=sys.stderr,
+            )
+            return EXIT_UNAVAILABLE
         dense = core.NumpyIndex(
             chunks,
             vectors,
@@ -221,16 +261,21 @@ def main() -> int:
         print(f"[dense] {len(chunks)} chunks x {vectors.shape[1]} dims -> {out / 'dense'}")
 
         # 在环内阻断：守卫失败则本次构建直接非零退出，不允许产出"看起来正常"的坏索引。
-        report = verify_embeddings(out / "dense", model_name=args.model)
+        try:
+            report = verify_embeddings(out / "dense", model_name=args.model)
+        except EmbeddingUnavailable as error:
+            print(f"[verify][UNAVAILABLE] {error}", file=sys.stderr)
+            print("提示：默认离线运行；首次下载模型请设 AIDE_ALLOW_HF_NETWORK=1", file=sys.stderr)
+            return EXIT_UNAVAILABLE
         print(f"[verify] 抽样 {report['checked']} 条，最差自相似度 {report['worst']:.4f}")
         if report["failures"]:
             for failure in report["failures"]:
                 print(f"[verify][FAIL] {failure}", file=sys.stderr)
             print(
-                "[abort] 向量与文本错位，索引不可用；排查见 docs/adr/0002",
+                "[abort] 向量与文本错位，索引不可用；排查见 docs/adr/0002（退出码 3）",
                 file=sys.stderr,
             )
-            return 3
+            return EXIT_INDEX_MISMATCH
 
     manifest = {
         "corpus": "corpus-v2",
@@ -245,12 +290,16 @@ def main() -> int:
     }
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"[done] {len(chunks)} chunks in {manifest['elapsed_seconds']}s -> {out}")
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except EmbeddingUnavailable as error:
+        print(f"[error] 嵌入不可用：{error}", file=sys.stderr)
+        print("提示：默认离线运行；首次下载模型请设 AIDE_ALLOW_HF_NETWORK=1", file=sys.stderr)
+        raise SystemExit(EXIT_UNAVAILABLE)
     except (CorpusError, loader.RagHomeMissing) as error:
         print(f"[error] {error}", file=sys.stderr)
-        raise SystemExit(2)
+        raise SystemExit(EXIT_CORPUS)

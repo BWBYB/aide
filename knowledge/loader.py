@@ -14,6 +14,14 @@ from types import SimpleNamespace
 
 DEFAULT_RAG_HOME = Path.home() / "Documents" / "ChatGPT" / "个人网站"
 
+# 默认离线：模型已缓存时不该联网。
+# 否则守卫会因为网络失败而崩，与"向量错位"走同一条失败路径，退出码无法区分。
+# 需要首次下载模型或排查网络时设 AIDE_ALLOW_HF_NETWORK=1。
+# 必须在任何 transformers/huggingface_hub 导入之前生效，故放在模块顶层。
+if not os.environ.get("AIDE_ALLOW_HF_NETWORK"):
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 
 class RagHomeMissing(RuntimeError):
     """AIDE_RAG_HOME 不存在或缺少年 agentbook-rag 目录。"""

@@ -224,7 +224,9 @@ def render(new: dict[str, Any], old: dict[str, Any] | None, index_dir: Path, run
 ## 六、结论（需要人工填写，不得由 AI 代写）
 
 - [ ] 结果是否在可解释范围内？
-- [ ] 默认链路仍取 E3、高质量档仍取 E4 吗？
+- [ ] 默认链路仍取 E3 吗？
+- [ ] E4 的额外一次 LLM 调用是否值得？必须同时看 MRR/nDCG 增益与 Recall@20 变化，
+      只报 MRR 增益而回避 Recall 下滑即为选择性汇报。
 - [ ] 是否需要调整 `candidate-k`？
 - [ ] 本批题目中有几道 gold 标注需要人工复核？
 
