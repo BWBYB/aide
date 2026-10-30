@@ -106,6 +106,19 @@
 - **计数**：`18 passed, 2 skipped`；`make test-unit` 为 `18 passed, 1 skipped, 1 deselected`；`check-spec-diff` 43；`check-provenance` 完整。
 - 下一项：等用户按三条审查口复核 A 组（fakes 优先、marker 分档、纯函数），通过后接 B 组状态栏。
 
+### 2026-10-30：A 组返工——4 条空转测试改为可失败，frozen 漏洞修复
+- 更新位置：`tests/test_context_prefix.py`、`src/aide/core/context.py`、`docs/adr/0004-no-role-merging-in-m1.md`、`docs/acceptance/M1-harness-core.md`
+- **审查结论：A 组不通过**，4 条断言"现在绿，但没有可失败的空间"。判断标准不是代码质量，而是**把实现改坏它会不会红**。
+- **① 前缀稳定性测的是对象指纹**：原断言取 `prefix.digest()`，同一对象算 sha256 数学上必然相等。改为从 `render_request()` 产物反推 `prefix_bytes_of(request)`（system content + tools）再比对。差别是真实的：若 `render_request` 把轨迹拼进 system，旧版照样绿，新版必红。
+- **② 工具定义不变性空转 5 次**：原断言对同一个 frozen tuple 重复取值。改为真的跑 5 轮带 `tool_calls` 的轨迹，逐轮比对请求里的 `tools` 字节，并断言顺序 `["read_file","write_file"]`。
+- **③ 工具定义不入 messages 用了空轨迹**：等价于"空列表里没有 X"，且断言方向也偏——工具**调用**本该出现在 messages，不该出现的是**定义**（description / schema）。改为带 tool_call 的真实轨迹，三条断言：调用在、description 不在、`"parameters"` 不在。
+- **④ `frozen=True` 没兑现**：`ToolSpec.parameters` 是 `dict`，`frozen` 只挡字段赋值，`tool.parameters["properties"]["extra"] = ...` 仍合法且会改变 digest —— 这正是前缀缓存失效的常见源头。改为 `_freeze()` **递归冻结到叶子**（dict→MappingProxyType，list→tuple），`to_dict()` 用 `_thaw()` 还原；`canonical_bytes()` 改 `sort_keys=True`（只定 dict 键序，不重排 tools 列表）。新增 `test_tool_parameters_are_deeply_frozen`。
+- **⑤ 同名不同义（角色合并）**：清单写"按 provider 约束合并"，实现与测试都只做了"角色合法"。按 ADR 0004 **M1 不做合并**（厂商契约需真实 API；且合并会把状态栏并入前一条 user 消息，破坏 B/C 组共同依赖的位置不变量），断言**改名为** `test_message_roles_valid_and_not_text_spliced`，解除条件写进 ADR。
+- **变异测试证明断言有效**（这是本轮唯一新增的验证手段）：逐条把实现改坏，4 条断言全部变红——
+  `前缀被注入轮次信息 → 红` / `工具定义被重排 → 红` / `工具定义混入 messages → 红` / `parameters 不再冻结 → 红`，随后还原实现，`19 passed, 2 skipped`。
+- 计数：A 组 10 条 unit + 1 条 contract(skip)；全仓 `19 passed, 2 skipped`。
+- 下一项：B 组状态栏（`build_state_bar(trace_summary, clock) -> str`，时钟必须作为参数注入）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

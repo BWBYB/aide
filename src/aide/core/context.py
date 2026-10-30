@@ -17,9 +17,32 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from types import MappingProxyType
+from typing import Any, Iterable, Mapping, Sequence
 
 from .message import Msg
+
+
+def _freeze(value: Any) -> Any:
+    """递归冻结：dict → MappingProxyType，list → tuple。
+
+    `frozen=True` 只阻止字段重新赋值，不阻止 `tool.parameters["x"]["y"] = ...`。
+    前缀缓存失效最常见的来源就是同一份工具定义被就地改了一处——所以这里冻结到叶子。
+    """
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value: Any) -> Any:
+    """还原成 JSON 可序列化的普通类型。"""
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
+    return value
 
 STATE_BAR_OPEN = "<agent_status>"
 STATE_BAR_CLOSE = "</agent_status>"
@@ -31,17 +54,24 @@ class ContextError(ValueError):
 
 @dataclass(frozen=True)
 class ToolSpec:
-    """工具定义。顺序即位置，不做任何排序（kv-cache-design:64,79）。"""
+    """工具定义。顺序即位置，不做任何排序（kv-cache-design:64,79）。
+
+    `parameters` 在构造时被**递归冻结**：顶层与嵌套层都不可变，
+    就地修改会抛 TypeError，而不是静默改变前缀字节。
+    """
 
     name: str
     description: str
-    parameters: dict[str, Any]
+    parameters: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "parameters", _freeze(self.parameters))
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "description": self.description,
-            "parameters": self.parameters,
+            "parameters": _thaw(self.parameters),
         }
 
 
@@ -60,13 +90,18 @@ class Prefix:
         return [tool.to_dict() for tool in self.tools]
 
     def canonical_bytes(self) -> bytes:
-        """前缀的唯一权威字节表示。缓存命中率以它为基准。"""
+        """前缀的唯一权威字节表示。缓存命中率以它为基准。
+
+        `sort_keys=True` 只约束 **dict 键** 的顺序，不重排 tools **列表**——
+        书里禁止的是后者（kv-cache-design:64,79），前者是让"同一份 schema
+        由不同来源构造"也能得到同一串字节。
+        """
         payload = {
             "system_prompt": self.system_prompt,
             "tools": self.tools_payload(),
         }
         return json.dumps(
-            payload, ensure_ascii=False, sort_keys=False, separators=(",", ":")
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
 
     def digest(self) -> str:

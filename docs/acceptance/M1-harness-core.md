@@ -51,7 +51,7 @@ make test
 | `test_prefix_contains_no_volatile_data` | 前缀里不出现时间戳/随机 ID/运行序号；few-shot 示例若存在必须固定，不得按请求检索 | M1 | kv-cache:21；context-eng:41 |
 | `test_tool_definitions_not_in_messages` | 工具定义走顶层 `tools` 字段，不得以消息形式混入 `messages` | M1 | context-eng:21 |
 | `test_tool_definitions_never_mutated_midrun` | 工具定义内容与**顺序**在单次运行内不变 | M1 | kv-cache:20,64,79 |
-| `test_message_roles_respect_provider_constraint` | 角色只用 system/user/assistant/tool；不自行拼接 `USER:/ASSISTANT:` 文本 | M1 | kv-cache:22；context-eng:21 |
+| `test_message_roles_valid_and_not_text_spliced` | 角色只用 system/user/assistant/tool；不自行拼接 `USER:/ASSISTANT:` 文本。**M1 不做连续同角色合并**，理由见 ADR 0004（厂商契约需真实 API 才能验证，且合并会破坏状态栏位置不变量） | M1 | kv-cache:22；context-eng:21；ADR 0004 |
 | `test_context_order_is_prefix_trace_statebar` | 段序固定，位置断言而非存在断言 | M1 | kv-cache:33；context-eng:22 |
 | `test_assembly_is_deterministic` | 同进程内用同一轨迹重建装配结果，字节一致（完整跨进程恢复见 M4） | M1 | **自定**（见 ADR 0003） |
 | `test_reasoning_echo_matches_provider_contract` | R1 类剥离历史思考；V4/K2/GLM-5 带 `tools` 时必须原样回传 `reasoning_content` | M1 | kv-cache:46,52-54 |
