@@ -79,6 +79,15 @@
 - **又一处工具坑（已修）**：`check-spec-diff` 的 grep 用的是 `test_[a-z_]+`，不含数字，于是 `test_compression_circuit_breaker_after_3_failures` 被截断成 `..._after_`，集合比对里出现一个"幽灵名字"。已改为 `test_[a-z0-9_]+`。这属于同一类：**工具本身静默给出错误结果**。
 - 下一项：③ 登记入口模块（随后写代码）。
 
+### 2026-10-30：M1 划阶段边界 + 每条断言标 skill 行号（45 → M1 可执行 43）
+- 更新位置：`docs/acceptance/M1-harness-core.md`、`M2-tools-mcp.md`、`M4-apps-events.md`、`AGENTS.md`、`docs/status.md`
+- **第八种失效形态（规格来自先验）**：D 组四层故障原本写"传输/协议/工具/语义"——格式正确、术语专业、逻辑自洽，**通过了所有下游检查**，因为下游查的是"实现是否符合规格"，不是"规格是否符合现实"。只有对照 skill 原文（error-recovery:19-24）才发现是编的。前七种都是"检查出了问题"，这一种是**检查的对象本身不存在**。
+- **堵法**：每条断言加「出处」列，标 `skill:行号`；无原文支撑的显式标 **自定**。M1 的 45 条中 33 条有行号、12 条为自定，其中 `test_policy_denies_symlink_escape` 完全无原文支撑，列入下次审查优先复核。已写进 `AGENTS.md` 作为硬约束。
+- **E 组降级为 policy 纯函数（复用 verifier 的同一手法）**：`core/policy.py` 改成 `evaluate(action) -> allow|deny|need_approval` 的纯函数，M1 只测函数、不执行真实操作；M2 接工具时执行器调用同一个 policy。5 条系统级断言（sandbox root / 执行层审批 / 反馈信号 / 回退可用 / 并行隔离）移到 M2，M1 留 5 条纯函数版。手法与 `verify(artifact, baseline)` 一致：**把对系统的依赖改成对参数的依赖**。
+- **A 组 session_restore 降级**：M1 改为 `test_assembly_is_deterministic`（同进程内重建一致），跨进程逐字节恢复移到 M4。任务注册基线声明同样移到 M4。
+- **计数**：M1 可执行 43（A8+B6+C6+D11+E5+F2+G5），外移 7 条；`check-spec-diff` 实测「断言条数 43 / 全文去重 50」——差值 7 正是外移条目，工具的口径分离在这里起了作用。
+- 下一项：③ 登记入口模块（随后写代码）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

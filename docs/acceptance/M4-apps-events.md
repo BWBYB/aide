@@ -38,6 +38,12 @@ make events --simulate interrupt
 - `test_dead_letter_on_repeated_failure` —— 连续失败进死信队列，不无限重试
 - `test_brief_every_claim_has_source` —— 简报中每条结论都有来源引用
 
+**从 M1 移入（需要真实会话/任务注册，M1 无法验证）**：
+
+- `test_session_restore_reproduces_prefix_bytes` —— 会话恢复后重建的消息序列与中断前逐字节一致；
+  M1 只降级验证 `test_assembly_is_deterministic`（同进程内重建一致）
+- `test_every_task_declares_acceptance_baseline` —— 每个任务注册时必须声明"验收基线命令"，缺失则注册失败
+
 ## 四、人工判断
 
 1. **五个任务里，至少有一个你自己会真的每天用。** 否则这个应用是编出来的，删掉。

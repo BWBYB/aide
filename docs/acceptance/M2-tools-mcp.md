@@ -29,6 +29,14 @@ make run TASK="把今天的学习笔记写入 notes/2026-10-30.md"
 - `test_discovery_two_level_routing` —— 工具 > 阈值时先查索引再加载完整定义
 - `test_mcp_tool_implements_same_protocol` —— MCP 工具与内置工具同一接口，无第二条执行路径
 
+**从 M1 移入（M1 只能测纯函数，系统级验证在这里）**：
+
+- `test_tool_runs_inside_sandbox_root` —— 真实执行时工作目录被限制在 sandbox root，写 `../` 被拒
+- `test_dangerous_action_requires_approval` —— 执行层拦截，策略由 M1 的 `test_policy_requires_approval_for_exec` 验证
+- `test_feedback_signal_is_structured` —— 工具错误结构化喂回（文件路径+行号+错误类型+建议）
+- `test_rollback_available_before_destructive_action` —— 破坏性动作前必须有快照/分支可用，否则拒绝执行
+- `test_parallel_batch_failure_isolation` —— 一个工具失败只在同批并行调用内传播，不取消独立调用
+
 ## 三、人工判断
 
 1. **工具描述能不能让模型"一次看懂该传什么参数"？** 这是 ch4 的 ACI 原则，程序验不了，只能人读。看不懂就改描述。
