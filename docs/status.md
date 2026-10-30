@@ -68,6 +68,14 @@
 - 验证：登记拦截实测有效——新建 `src/aide/llm/client.py` 后测试报 `assert not {'aide.llm.client'}`，删除后 `8 passed, 1 skipped`。
 - 下一项：② 加载 6 个 skill 并填留痕。
 
+### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
+- 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
+- **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
+- **解法（选轻的那种）**：把基线从"任务注册表"下移到**函数参数**，verifier 签名固定为 `verify(artifact, baseline)`，测试自带最小基线（文件非空 + 语法可解析）。G 组因此自足，与 E 解耦；E 只保留产品约束"任务上线必须声明基线"。依赖表已移除该行并写明原因。
+- **check-spec-diff 三个修正**：① `BASE ?= HEAD`——默认比"工作区 vs 最新提交"，正是"这次改动有没有丢"要问的问题，查历史用 `BASE=HEAD~3`；② 基线为空直接报错退出，堵住"SPEC 写错时输出仍是空、看起来正常"；③ 条数只数**自动检查节内**的表格行。
+- **自己又踩了一次口径混用**：条数首版写成全文 `grep -c`，把依赖表的 9 行也算进去，报 41；改为 `awk '/## 三、自动检查/,/## 三之二/'` 限定范围后为 32。这是本轮第二次"计数看起来对、实际混了两个集合"。
+- 下一项：② 加载 6 个 skill 并填留痕。
+
 ### 2026-10-30：M1 清单加验证器配对断言与依赖图（31 → 32）
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **新增 `test_verifier_rejects_obviously_bad_output`**：构造空文件 / 语法错误的脚本 / 只改注释的补丁，断言 verifier 返回 False 并给出可定位原因。理由：`test_completion_claim_requires_verifier` 只证明「verifier 在环内」，一个永远返回 True 的空实现同样能通过；必须有一条证明「verifier 有区分力」。G 组因此改名为「预算、终止与验证」，两条件必须成对，且**必须在写 verifier 之前定稿**，否则会退化成"实现写成什么样、断言就迁就成什么样"。

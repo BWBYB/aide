@@ -88,13 +88,18 @@ test:
 status:
 	@cat docs/status.md
 
-# 改完验收清单先跑这个：对比上一版断言集合，一行看出有没有丢
-# 注意 comm 要求输入已排序，忘记 sort -u 会静默给出错误结果。
+# 改完验收清单先跑这个：对比基线断言集合，一行看出有没有丢
+# - BASE 默认 HEAD：问的是"这次改动有没有丢条目"；查历史用 BASE=HEAD~3
+# - comm 要求输入已排序，漏 sort -u 会静默给出错误结果
+# - 基线为空必须报错：否则 SPEC/BASE 写错时输出仍是"旧有今无：空"，看起来一切正常
 SPEC ?= docs/acceptance/M1-harness-core.md
+BASE ?= HEAD
 .PHONY: check-spec-diff
 check-spec-diff:
-	@git show HEAD~1:$(SPEC) 2>/dev/null | grep -oE "test_[a-z_]+" | sort -u > /tmp/spec-old.txt || true
+	@git show $(BASE):$(SPEC) 2>/dev/null | grep -oE "test_[a-z_]+" | sort -u > /tmp/spec-old.txt || true
+	@test -s /tmp/spec-old.txt || { echo "[error] 基线为空，检查 SPEC=$(SPEC) BASE=$(BASE)"; exit 1; }
 	@grep -oE "test_[a-z_]+" $(SPEC) | sort -u > /tmp/spec-new.txt
 	@echo "旧有今无（疑似丢失）："; comm -23 /tmp/spec-old.txt /tmp/spec-new.txt
 	@echo "今有旧无（新增或改名）："; comm -13 /tmp/spec-old.txt /tmp/spec-new.txt
-	@echo "当前条数：$$(wc -l < /tmp/spec-new.txt | tr -d ' ')"
+	@echo "断言条数（仅自动检查节内表格行）：$$(awk '/^## 三、自动检查/,/^## 三之二/' $(SPEC) | grep -cE '^\| `test_' | tr -d ' ')"
+	@echo "全文去重条数（含正文引用，仅供比对）：$$(wc -l < /tmp/spec-new.txt | tr -d ' ')"

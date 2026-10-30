@@ -103,7 +103,7 @@ make test
 | `test_budget_limit_terminates` | token 预算耗尽时停止，**不抛异常**，返回部分结果 + 预算耗尽原因 |
 | `test_timeout_limit_terminates` | 墙钟超时生效，且**已完成步骤的轨迹不丢** |
 | `test_completion_claim_requires_verifier` | 模型自称完成**不得**直接终止循环；必须经 `verifier` 判定，未通过则继续或带原因终止 |
-| `test_verifier_rejects_obviously_bad_output` | 构造明显不满足验收基线的产物（空文件 / 语法错误的脚本 / 只改注释的补丁），断言 verifier 返回 **False** 并给出**可定位原因**（哪个基线项不满足） |
+| `test_verifier_rejects_obviously_bad_output` | verifier 签名固定为 `verify(artifact, baseline)`；测试**直接传入最小基线**（文件非空 + 语法可解析），构造空文件 / 语法错误脚本 / 只改注释的补丁，断言返回 **False** 并给出**可定位原因**（哪个基线项不满足） |
 
 > 这一组是「约束」格子的核心。没有前三条，防不住循环停不下来与 token 失控；
 > 没有后两条，防不住"假成功"。
@@ -113,6 +113,10 @@ make test
 > `loop-engineering` 的原话：**验证不可靠时，循环转得越快，只是把劣质产出更快地标记为完成。**
 >
 > 且这条**必须在写 verifier 之前定稿**——否则会退化成"实现写成什么样，断言就迁就成什么样"。
+>
+> **接口约束**：verifier 必须接受**显式基线参数**（`verify(artifact, baseline)`），而不是自己去任务注册表里查。
+> 这条决定了 G 组是否自足：若 verifier 只从任务注册读基线，G 就得等 E 做完才能测，
+> 而 E 又排在 G 之后——规则"测不了就标 xfail、不得改软"会在第一处冲突上失效。
 
 ## 三之二、实现顺序与依赖（施工图）
 
@@ -131,8 +135,12 @@ A（前缀与消息结构）→ B（状态栏）→ G（闸门与验证）→ C�
 | `test_fallback_and_circuit_events_recorded` | `runtime/trace` 可用 | 没有轨迹就没有写入目标 |
 | `test_stream_interruption_resumes_from_last_block` | D 的块级流式解析 | 不按块解析就无法定位"最后一个完整块" |
 | `test_completion_claim_requires_verifier` | `core/verifier` 接口存在 | 先有接口才能断言"调用过" |
-| `test_verifier_rejects_obviously_bad_output` | E 的「每个任务声明验收基线」 | 没有基线就构造不出"明显不满足基线"的产物 |
 | `test_every_task_declares_acceptance_baseline` | 任务注册机制 | 无注册点则无处校验 |
+
+> `test_verifier_rejects_obviously_bad_output` **不在上表中**：它曾经依赖 E 组的"任务声明验收基线"，
+> 而全局顺序是 G 在 E 之前——依赖成环，规则当场失效。解法是把基线从"任务注册表"下移到**函数参数**
+> （`verify(artifact, baseline)`），测试自带最小基线，G 组因此自足并与 E 解耦。
+> E 组只保留产品约束：任务上线必须声明基线。
 
 **规则（防"顺手改软"）**：后实现的功能**不得**顺手放宽前面的断言。
 某条暂时测不了时，标 `xfail` 并写明原因与解除条件，**不得删除或改软**——
