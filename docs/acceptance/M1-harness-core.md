@@ -38,8 +38,8 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1 可执行 45 条**（A8 + B6 + C6 + D11 + E5 + F3 + G6）。
-另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之三、阶段边界」。
+按声明的 skill 分组，**M1 可执行 46 条**（A8 + B6 + C7 + D11 + E5 + F3 + G6）。
+另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之四、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
 
@@ -64,7 +64,7 @@ make test
 | `test_state_bar_has_five_fields` | 时间戳、工具计数、TODO（四态）、最近错误摘要、系统状态（cwd/OS/Shell/Python） | M1 | state-bar:82-88 |
 | `test_tool_counter_maintained_by_code` | 构造"模型自称 3 次、实际 2 次"，断言计数为 **2** | M1 | state-bar:95 |
 | `test_state_bar_replaced_each_turn` | 第 N 轮只有一条状态栏；若改持久追加，须给出 token 增长曲线实测 | M1 | state-bar:63-70 |
-| `test_state_bar_survives_compression` | 压缩后状态栏仍是最末一条且为当前轮 | M1 | state-bar:97 |
+| `test_state_bar_survives_compression` | 压缩后状态栏仍是最末一条且为当前轮。**当前为占位实现**：用 `trajectory[-2:]` 切片模拟压缩，未调用真实压缩器；C 组完成后必须改为调用 `compress()`，否则只覆盖装配顺序、不覆盖"压缩后存活" | M1 | state-bar:97 |
 | `test_state_bar_not_polluted_by_external_content` | 网页/工具结果不得被直接写入状态栏 | M1 | state-bar:96 |
 
 ### C. 压缩（`context-compression`）
@@ -73,7 +73,8 @@ make test
 |---|---|---|---|
 | `test_compression_trigger_uses_declared_threshold` | 阈值显式声明（默认**窗口 80%**）；未达不压、达到才压 | M1 | compress:49 |
 | `test_compression_batch_with_compressed_marker` | 一次性批量压未标记结果；已压内容打 `[COMPRESSED]` 且不重复处理 | M1 | compress:61-69 |
-| `test_compression_is_layered_light_to_heavy` | 按五层由轻到重：预算控制→删噪声→API 微压缩→归档摘要→全量压缩。**隔离是替代方案，不是一层** | M1 | compress:26,61-69 |
+| `test_compression_is_layered_light_to_heavy` | 按五层由轻到重：预算控制→删噪声→API 微压缩→归档摘要→全量压缩。**隔离是替代方案，不是一层**。M1 只实现 1/2/4/5 四层，第 3 层（API 微压缩）不可用须留 skipped 记录 | M1 | compress:26,61-69 |
+| `test_compression_records_skipped_layers_with_reason` | 不可用的层（API 微压缩）必须出现在 `steps` 里并带跳过原因，**不得静默跳过**——否则"五层"变成"四层"而无人察觉 | M1 | compress:61-69 |
 | `test_compression_keeps_trace_pointer` | 压缩后保留原始轨迹索引，可回溯 | M1 | compress:61-69 |
 | `test_status_bar_only_compression_is_refused` | 压到"只剩系统提示+状态栏"必须被拒或标记高危 | M1 | state-bar:97 |
 | `test_summary_preserves_four_categories` | 摘要必保 decisions / constraints / failures / citations | M1 | compress:80 |
@@ -160,7 +161,63 @@ A（前缀与消息结构）→ B（状态栏）→ G（闸门与验证）→ C�
 **规则（防"顺手改软"）**：后实现的功能**不得**顺手放宽前面的断言。
 测不了就标 `xfail` 并写明原因与解除条件，**不得删除或改软**。
 
-## 三之三、阶段边界（这 7 条不属于 M1）
+## 三之三、C 组施工图（五层映射与依赖）
+
+> 开工前先定这张表，因为它决定"断言名覆盖到哪里"。上一轮刚修过一类问题：
+> **断言名比实现覆盖范围宽**。压缩最容易复发——"五层压缩"听起来都做了，
+> 实际可能只做了触发点。
+
+### 1. 五层在 M1 的落点
+
+| 层 | 书里要求（compress:61-69） | M1 落地函数 | 实现？ | 理由 |
+|---|---|---|---|---|
+| 1 工具结果预算控制 | 大输出存磁盘，模型只看摘要预览；替换决策做出即冻结 | `cap_tool_output(text, max_chars) -> Capped` | ✅ 纯函数 | 落盘属 M2 工具层；M1 只做**截断决策 + 冻结语义** |
+| 2 噪声直接删除 | 低价值内容直接移除，不摘要 | `drop_noise(messages, policy) -> (kept, dropped)` | ✅ 纯函数 | 判定必须显式（`disposable=True` 或超龄），不能让模型自由裁量 |
+| 3 API 层微压缩 | 服务端移除前缀中指定工具结果 | **无** | ❌ **M1 不实现** | 依赖 provider 的 context-editing 能力，本地既不可实现也不可验证。**必须在计划里显式记录"跳过原因"**，不得静默跳过 |
+| 4 归档式摘要 | 逐轮结构化摘要，像 git log 而非 squash | `archive_summarize(turns, summarize_fn)` | ✅ 注入 summarizer | summarizer 作参数传入（可为假函数），因此可测 |
+| 5 全量压缩 | LLM 驱动 + 连续失败熔断 | `full_compress(messages, summarize_fn, breaker)` | ✅ 注入 summarizer + 熔断 | 熔断阈值 3，复用 G 组连续失败计数 |
+
+### 2. 编排：`compress()`
+
+```
+compress(messages, limits, count_tokens, summarize_fn=None) -> CompressionResult
+```
+
+- 按层**由轻到重**尝试，直到估算 token 低于 `limits.compression_threshold()`
+- 每层产出一条 `CompressionStep(layer, changed, reason)`；**跳过的层也必须留 step**（`changed=False, reason="..."`）
+- 被压缩过的消息打 `[COMPRESSED]` 标记，**永不二次处理**
+- 返回 `CompressionResult(messages, steps, refused, refusal_reason)`
+- **拒绝分支**：若压缩后只剩"系统提示 + 状态栏"，返回 `refused=True`，不改动消息（`test_status_bar_only_compression_is_refused`）
+
+### 3. token 估算口径（必须先定，否则阈值无意义）
+
+M1 用**可注入**的 `count_tokens: Callable[[str], int]`，默认实现为 `len(text) // 3` 的字符近似。
+中文与代码的实际比值偏差较大，因此：
+
+- 断言只依赖"同一个 count_tokens 下的相对关系"，不硬编码绝对 token 数
+- 偏差记入 ADR 0005（待写），M5 接真实 tokenizer 时替换并重测
+
+### 4. 断言 → 依赖 → 顺序
+
+| 顺序 | 断言 | 依赖 | 说明 |
+|---|---|---|---|
+| 1 | `test_compression_trigger_uses_declared_threshold` | `count_tokens` + `compression_threshold` | 未达阈值不压、达到才压 |
+| 2 | `test_compression_batch_with_compressed_marker` | 层 1（cap）+ 标记 | 一次性批量压未标记结果，已压不重复 |
+| 3 | `test_compression_is_layered_light_to_heavy` | 至少三层可用（1/2/4） | 层 3 不实现，但必须出现在 skipped 记录里 |
+| 4 | `test_compression_keeps_trace_pointer` | 层 4（archive） | 压缩后仍能回溯原始轨迹索引 |
+| 5 | `test_summary_preserves_four_categories` | 层 4 + summarizer | decisions / constraints / failures / citations |
+| 6 | `test_compression_records_skipped_layers_with_reason` | 编排器 skipped 列表 | **层 3 不可用时不得静默跳过** |
+| 7 | `test_status_bar_only_compression_is_refused` | 编排器拒绝分支 + B 组状态栏 | 跨组断言 |
+| — | `test_compression_circuit_breaker_after_3_failures`（D 组） | 层 5 + G 组连续失败计数 | 连续 3 次失败即放弃 |
+
+### 5. 两条交叉断言的处置（必须写清，否则就是同名不同义）
+
+| 断言 | 现状 | 处置 |
+|---|---|---|
+| `test_state_bar_survives_compression`（B 组） | **占位实现**：用 `trajectory[-2:]` 切片模拟压缩，**没有调用任何压缩器** | C 组完成后**必须改为调用真实 `compress()`**，并断言状态栏未被压缩吞掉。未改之前，该断言只覆盖"装配顺序"，不覆盖"压缩后存活"——清单里已标注 |
+| `test_status_bar_only_compression_is_refused`（C 组） | 未实现 | 依赖编排器拒绝分支 + B 组 `build_state_bar` |
+
+## 三之四、阶段边界（这 7 条不属于 M1）
 
 | 断言 | 移到 | 为什么 |
 |---|---|---|

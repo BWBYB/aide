@@ -163,6 +163,21 @@
 - 计数：spec **45 条**（A8+B6+C6+D11+E5+F3+**G6**）；出处 36 行号 / 9 自定 / 完整。
 - 下一项：C 组压缩（阈值 `compression_threshold()` 已就绪）。
 
+### 2026-10-30：C 组开工前先出施工图（45 → 46）
+- 更新位置：`docs/acceptance/M1-harness-core.md`
+- **动机**：上一轮刚修过"断言名比实现覆盖范围宽"。"五层压缩"听起来都做了，实际可能只做了触发点——所以先定映射表，再写代码。
+- **五层落地表**（写入「三之三、C 组施工图」）：
+  1. 预算控制 → `cap_tool_output()` ✅（落盘属 M2，M1 只做截断决策 + 冻结）
+  2. 删噪声 → `drop_noise()` ✅（判定须显式，不让模型裁量）
+  3. **API 层微压缩 → 无 ❌**（依赖 provider context-editing，本地不可实现也不可验证）
+  4. 归档摘要 → `archive_summarize(turns, summarize_fn)` ✅（summarizer 作参数注入，故可测）
+  5. 全量压缩 → `full_compress(..., breaker)` ✅（熔断阈值 3，复用 G 组计数）
+- **新增断言 `test_compression_records_skipped_layers_with_reason`**：第 3 层不可用时必须留 skipped 记录并写原因，**不得静默跳过**——否则"五层"悄悄变"四层"。45 → **46**（C6 → C7）。
+- **token 估算口径先定**：`count_tokens` 可注入，默认 `len(text)//3` 字符近似；断言只依赖同一口径下的相对关系，不硬编码绝对 token；偏差待记 ADR 0005，M5 接真实 tokenizer 时替换重测。
+- **查出一条"同名不同义"（B 组）**：`test_state_bar_survives_compression` 现在用 `trajectory[-2:]` 切片**模拟**压缩，没有调用任何压缩器。已在清单里标注"占位，C 组完成后必须改为调用 `compress()`"，否则它只覆盖装配顺序、不覆盖"压缩后存活"。
+- 计数：spec **46 条**（A8+B6+**C7**+D11+E5+F3+G6）；出处 37 行号 / 9 自定 / 完整；`41 passed, 2 skipped`（本轮未写代码）。
+- 下一项：按施工图顺序写 C 组（1 → 2 → 4 → 5 → 编排器 → 拒绝分支）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
