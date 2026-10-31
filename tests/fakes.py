@@ -96,6 +96,7 @@ class FakeProvider:
             raise ValueError("FakeProvider 需要至少一条脚本响应")
         self._script = list(script)
         self._fail_at: int | None = None
+        self._fail_once: int | None = None
         self._error_factory: Any = FakeRateLimitError
         self._recorded: list[dict[str, Any]] = []
         self._calls = 0
@@ -107,6 +108,12 @@ class FakeProvider:
         if n < 0:
             raise ValueError("fail_after 的 n 不能为负")
         self._fail_at = n
+        self._error_factory = error_factory
+        return self
+
+    def fail_once(self, error_factory: Any = FakeStreamInterruptedError) -> "FakeProvider":
+        """只让下一次调用失败一次，之后恢复正常（测重试成功路径）。"""
+        self._fail_once = self._calls
         self._error_factory = error_factory
         return self
 
@@ -130,6 +137,10 @@ class FakeProvider:
 
         if self._clock is not None and self._latency:
             self._clock.advance(self._latency)
+
+        if self._fail_once is not None and index == self._fail_once:
+            self._fail_once = None
+            raise self._error_factory(f"injected once at call #{index}")
 
         if self._fail_at is not None and index >= self._fail_at:
             raise self._error_factory(f"injected failure at call #{index}")

@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Callable
@@ -42,7 +44,7 @@ def classify(error: BaseException | str) -> Fault:
     name = error if isinstance(error, str) else type(error).__name__
     lowered = name.lower()
 
-    if any(key in lowered for key in ("ratelimit", "timeout", "overload", "connection")):
+    if any(key in lowered for key in ("ratelimit", "timeout", "overload", "connection", "interrupt")):
         return Fault(FaultLayer.API, name, True, "基础设施噪声，可重试")
     if any(key in lowered for key in ("tool", "invalidargs", "badrequest")):
         return Fault(FaultLayer.TOOL, name, False, "工具层错误，应作为结果喂回模型")
@@ -88,7 +90,10 @@ def decide_recovery(strategy: StreamStrategy = StreamStrategy.DISCARD_RETRY) -> 
 
 
 def normalize_splice(head: str, tail: str, *, scan: int = 200) -> str:
-    """续写拼接归一化：去掉重复前缀、压缩多余空白。
+    """拼接归一化：去除重复前缀与多余空白。
+
+    PREPARED（ADR 0007）：M1 采用策略①，本函数当前**无调用方**。
+    供策略 ②③ 落地时使用；接口契约见 ADR 0007，改动需同步更新该 ADR。
 
     续写方式下拼接处容易多出重复字符——"参数合法不等于语义正确"（error-recovery:46）。
     这是纯函数，与是否接真实流无关，因此 M1 就能测。
@@ -103,8 +108,11 @@ def normalize_splice(head: str, tail: str, *, scan: int = 200) -> str:
     return "\n".join(line.rstrip() for line in merged.split("\n")).strip()
 
 
-def validate_tool_arguments(arguments: dict, required: tuple[str, ...]) -> str | None:
-    """重新解析校验：参数合法但语义错误也要检出（空值、占位符）。"""
+def validate_tool_arguments_shape(arguments: dict, required: tuple[str, ...]) -> str | None:
+    """只验形状与必填（存在 + 非空白），**不做语义校验**。
+
+    PREPARED（ADR 0007）：M1 无调用方；语义校验需在 ②③ 落地时补。
+    """
     for key in required:
         if key not in arguments:
             return f"缺少必填参数：{key}"
@@ -137,3 +145,142 @@ class StreamWatchdog:
     @property
     def killed(self) -> bool:
         return self._killed
+
+
+@dataclass(frozen=True)
+class RetryDecision:
+    retry: bool
+    delay_seconds: float
+    reason: str
+
+
+def backoff_delay(attempt: int, base: float = 0.5, cap: float = 8.0) -> float:
+    """指数退避，**有硬上限**。不存在无限重试。"""
+    if attempt < 0 or base <= 0 or cap <= 0:
+        raise ValueError("attempt/base/cap 必须为正")
+    return min(cap, base * (2**attempt))
+
+
+def decide_retry(
+    fault: Fault,
+    attempt: int,
+    *,
+    max_attempts: int = 3,
+    base: float = 0.5,
+    cap: float = 8.0,
+) -> RetryDecision:
+    """只有可重试层才重试；达到上限即停，进入熔断。"""
+    if not fault.retryable:
+        return RetryDecision(False, 0.0, f"{fault.kind} 不可重试（{fault.layer.value} 层）")
+    if attempt + 1 >= max_attempts:
+        return RetryDecision(False, 0.0, f"已达最大重试次数 {max_attempts}")
+    return RetryDecision(True, backoff_delay(attempt, base, cap), f"可重试：{fault.kind}")
+
+
+class BreakerState(str, Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+@dataclass
+class CircuitBreaker:
+    """熔断器：连续失败达阈值即打开，冷却后半开探测。阈值 3 来自 error-recovery:42。"""
+
+    threshold: int = 3
+    cooldown_seconds: float = 30.0
+    state: BreakerState = BreakerState.CLOSED
+    failures: int = 0
+    opened_at: datetime | None = None
+
+    def record_failure(self, now: datetime) -> BreakerState:
+        self.failures += 1
+        if self.state is not BreakerState.OPEN and self.failures >= self.threshold:
+            self.state = BreakerState.OPEN
+            self.opened_at = now
+        return self.state
+
+    def record_success(self) -> BreakerState:
+        self.failures = 0
+        self.state = BreakerState.CLOSED
+        self.opened_at = None
+        return self.state
+
+    def allow(self, now: datetime) -> bool:
+        if self.state is BreakerState.CLOSED:
+            return True
+        if self.state is BreakerState.OPEN:
+            if self.opened_at is None:
+                return False
+            if (now - self.opened_at).total_seconds() >= self.cooldown_seconds:
+                self.state = BreakerState.HALF_OPEN
+                return True
+            return False
+        return True  # HALF_OPEN：放行一次探测
+
+
+def tool_fingerprint(name: str, arguments: dict) -> str:
+    """对「工具名 + 参数」算指纹，相同指纹反复出现即判无进展循环。"""
+    payload = json.dumps(
+        {"name": name, "args": arguments}, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+@dataclass
+class LoopDetector:
+    repeat_threshold: int = 3
+    counts: dict[str, int] = field(default_factory=dict)
+
+    def observe(self, name: str, arguments: dict) -> bool:
+        """返回 True 表示已判定陷入重复调用。"""
+        key = tool_fingerprint(name, arguments)
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key] >= self.repeat_threshold
+
+
+@dataclass(frozen=True)
+class Event:
+    kind: str
+    detail: str
+
+
+@dataclass
+class EventLog:
+    """接管、熔断、重试事件必须落轨迹，否则 M5 无法归因。"""
+
+    events: list[Event] = field(default_factory=list)
+
+    def record(self, kind: str, detail: str) -> None:
+        self.events.append(Event(kind, detail))
+
+    def kinds(self) -> list[str]:
+        return [event.kind for event in self.events]
+
+
+def execute_with_retry(
+    provider,
+    request: dict,
+    *,
+    strategy: StreamStrategy = StreamStrategy.DISCARD_RETRY,
+    max_attempts: int = 2,
+    log: EventLog | None = None,
+):
+    """按策略①执行：中断即**整轮重发**，请求体保持原样、不携带半截内容。"""
+    decide_recovery(strategy)
+    last: BaseException | None = None
+    for attempt in range(max_attempts):
+        try:
+            response = provider.complete(request)
+            if log is not None and attempt > 0:
+                log.record("retry_success", f"第 {attempt + 1} 次尝试成功")
+            return response
+        except BaseException as error:  # noqa: BLE001
+            last = error
+            fault = classify(error)
+            decision = decide_retry(fault, attempt, max_attempts=max_attempts)
+            if log is not None:
+                log.record("retry", f"{fault.kind}: {decision.reason}")
+            if not decision.retry:
+                raise
+    raise last  # pragma: no cover

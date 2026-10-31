@@ -95,7 +95,7 @@ make test
 | `test_stream_idle_watchdog_kills_stalled_stream` | 独立空闲看门狗：连接建立但无数据超阈值即判定卡死并主动重试 | M1 | error:28,65 |
 | `test_stream_interruption_discards_partial_and_retries` | **策略①**：丢弃半截内容整轮重发，`carry_partial=False`；②③ 调用即显式抛 `NotImplementedError`（本地不可验证，见 ADR 0007）。原名 `..._resumes_from_last_block` 与原文不符——原文给的是三种策略，默认最稳的是①，「续传」是②③的说法 | M1 | error:46 |
 | `test_stream_resume_splice_is_normalized` | 续写拼接后去重前缀与多余空白；参数合法但语义错误（空值/缺参）必须被检出。**这是"格式合法 ≠ 语义正确"的唯一检查点** | M1 | error:46,71 |
-| `test_error_path_never_calls_llm` | 错误处理路径禁用会再调模型的副作用逻辑，并用递归深度计数兜底 | M1 | error:44,69 |
+| `test_error_path_never_calls_llm` | 错误处理路径禁用会再调模型的副作用逻辑（AST 检查 `except` 分支内无 provider 调用）。**守门型：M1 无触发路径**——它一定绿，防的是将来有人加 | M1 | error:44,69 |
 | `test_compression_circuit_breaker_after_3_failures` | 压缩连续失败 3 次即放弃并暴露 | M1 | error:42；compress:69 |
 | `test_fallback_preserves_prefix` | 切厂时前缀逐字节一致；厂商私有凭证一律丢弃，历史调用改写为文字叙述 | M1 | error:61 |
 | `test_fallback_and_circuit_events_recorded` | 接管、熔断、恢复动作写入轨迹 | M1 | **自定**（M5 归因需要） |

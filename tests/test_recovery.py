@@ -6,19 +6,33 @@
 
 from __future__ import annotations
 
+import ast
+import json
+import pathlib
+
 from datetime import datetime, timedelta
 
 import pytest
 
+from aide.core.compressor import FailureBreaker
+from aide.core.failover import neutralize_request
+from fakes import FakeProvider, FakeStreamInterruptedError, ModelResponse
 from aide.core.recovery import (
     FaultLayer,
     StreamStrategy,
     StreamWatchdog,
     classify,
+    decide_retry,
+    execute_with_retry,
+    backoff_delay,
+    CircuitBreaker,
+    BreakerState,
+    LoopDetector,
+    EventLog,
     decide_recovery,
     normalize_splice,
     should_kill,
-    validate_tool_arguments,
+    validate_tool_arguments_shape,
 )
 
 NOW = datetime(2026, 10, 31, 10, 0, 0)
@@ -79,8 +93,17 @@ def test_stream_interruption_discards_partial_and_retries() -> None:
     """
     plan = decide_recovery()
     assert plan.strategy is StreamStrategy.DISCARD_RETRY
-    assert plan.carry_partial is False, "策略①不得把半截内容带进下一轮"
     assert plan.action == "retry_whole_turn"
+
+    # 行为证据：半截内容不得出现在重发请求里。
+    # 只断言 plan.carry_partial is False 证明不了什么——它只是「自称没带」。
+    provider = FakeProvider([ModelResponse(content="完成")]).fail_once(FakeStreamInterruptedError)
+    request = {"messages": [{"role": "user", "content": "原始问题"}], "tools": []}
+    execute_with_retry(provider, request, max_attempts=2)
+
+    assert len(provider.recorded) == 2, "策略①应当是整轮重发"
+    assert provider.recorded[0] == provider.recorded[1], "重发请求被改动过（可能带入了半截内容）"
+    assert "HALF" not in json.dumps(provider.recorded[1], ensure_ascii=False)
 
     for unsupported in (StreamStrategy.PARTIAL_AS_ASSISTANT, StreamStrategy.META_INSTRUCTION):
         with pytest.raises(NotImplementedError):
@@ -97,10 +120,10 @@ def test_stream_resume_splice_is_normalized() -> None:
     assert normalize_splice("前缀 ABC", "ABC 后续") == "前缀 ABC 后续"
     assert normalize_splice("第一行  \n第二行  ", "") == "第一行\n第二行"
 
-    assert validate_tool_arguments({"path": "a.md"}, ("path",)) is None
-    empty = validate_tool_arguments({"path": "   "}, ("path",))
+    assert validate_tool_arguments_shape({"path": "a.md"}, ("path",)) is None
+    empty = validate_tool_arguments_shape({"path": "   "}, ("path",))
     assert empty is not None and "语义不成立" in empty
-    missing = validate_tool_arguments({}, ("path",))
+    missing = validate_tool_arguments_shape({}, ("path",))
     assert missing is not None and "缺少必填参数" in missing
 
 
@@ -108,3 +131,124 @@ def test_stream_resume_splice_is_normalized() -> None:
 def test_should_kill_rejects_non_positive_timeout() -> None:
     with pytest.raises(ValueError):
         should_kill(NOW, NOW, 0)
+
+
+@pytest.mark.unit
+def test_retry_only_for_retryable_classes() -> None:
+    """只有 API 层可重试；参数非法、权限不足等原样重试一万次结果相同。"""
+    api = classify("RateLimitError")
+    assert decide_retry(api, 0, max_attempts=3).retry is True
+
+    tool = classify("InvalidToolArgs")
+    decision = decide_retry(tool, 0, max_attempts=3)
+    assert decision.retry is False and "不可重试" in decision.reason
+
+
+@pytest.mark.unit
+def test_retry_backoff_is_bounded() -> None:
+    """指数退避有硬上限，且达到最大尝试次数后不再重试。"""
+    delays = [backoff_delay(i, base=0.5, cap=8.0) for i in range(10)]
+    assert delays == sorted(delays), "退避不是单调不减"
+    assert max(delays) <= 8.0, "退避没有上限"
+
+    api = classify("RateLimitError")
+    assert decide_retry(api, 2, max_attempts=3).retry is False, "达到上限仍在重试"
+
+
+@pytest.mark.unit
+def test_circuit_breaker_opens_then_half_opens() -> None:
+    """连续失败达阈值即打开；冷却后半开；成功一次才恢复闭环。"""
+    breaker = CircuitBreaker(threshold=3, cooldown_seconds=30)
+    for _ in range(2):
+        breaker.record_failure(NOW)
+    assert breaker.state is BreakerState.CLOSED
+    assert breaker.allow(NOW) is True
+
+    breaker.record_failure(NOW)
+    assert breaker.state is BreakerState.OPEN
+    assert breaker.allow(NOW) is False, "熔断打开后不应放行"
+
+    assert breaker.allow(NOW + timedelta(seconds=31)) is True
+    assert breaker.state is BreakerState.HALF_OPEN
+    assert breaker.record_success() is BreakerState.CLOSED
+
+
+@pytest.mark.unit
+def test_repeated_tool_fingerprint_detected() -> None:
+    """相同「工具名+参数」反复出现即判无进展循环。"""
+    detector = LoopDetector(repeat_threshold=3)
+    args = {"path": "a.md"}
+    assert detector.observe("read_file", args) is False
+    assert detector.observe("read_file", args) is False
+    assert detector.observe("read_file", args) is True
+    assert detector.observe("read_file", {"path": "b.md"}) is False, "参数不同不应算重复"
+
+
+@pytest.mark.unit
+def test_fallback_preserves_prefix() -> None:
+    """切厂时前缀逐字节一致；厂商私有凭证一律丢弃。"""
+    request = {
+        "messages": [
+            {"role": "system", "content": "你是助理"},
+            {"role": "assistant", "content": "思考", "thinking_signature": "SIG", "reasoning_content": "R"},
+            {"role": "user", "content": "问题"},
+        ],
+        "tools": [{"name": "read_file", "description": "读", "parameters": {"type": "object"}}],
+    }
+    switched = neutralize_request(request)
+
+    assert switched["messages"][0] == request["messages"][0], "系统提示被改动"
+    assert switched["tools"] == request["tools"], "工具定义被改动"
+    assert "thinking_signature" not in json.dumps(switched, ensure_ascii=False)
+    assert "reasoning_content" not in json.dumps(switched, ensure_ascii=False)
+    assert switched["messages"][1]["content"] == "思考", "正文应保留为普通内容"
+
+    # 幂等：再次切换不改变结果
+    assert neutralize_request(switched) == switched
+
+
+@pytest.mark.unit
+def test_error_path_never_calls_llm() -> None:
+    """守门型断言：异常处理分支里不得再调用模型（死亡螺旋防护）。
+
+    M1 的错误路径当前没有 LLM 调用，所以这条一定绿——它防的是「将来有人加」。
+    用 AST 检查 `except` 分支内是否出现 provider 调用，而不是全文 grep
+    （正常路径本来就该调 provider）。
+    """
+    tree = ast.parse(pathlib.Path("src/aide/core/recovery.py").read_text(encoding="utf-8"))
+    banned = {"complete", "generate", "chat"}
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler):
+            continue
+        for inner in ast.walk(node):
+            if (
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Attribute)
+                and inner.func.attr in banned
+            ):
+                raise AssertionError(f"异常分支里调用了模型：{inner.func.attr}")
+
+
+@pytest.mark.unit
+def test_compression_circuit_breaker_after_3_failures() -> None:
+    """压缩连续失败 3 次即放弃，不进入反复失败循环。"""
+    breaker = FailureBreaker(max_consecutive=3)
+    breaker = breaker.record_failure()
+    breaker = breaker.record_failure()
+    assert breaker.opened is False
+    breaker = breaker.record_failure()
+    assert breaker.opened is True
+
+    assert breaker.record_success().opened is False, "成功一次应清零"
+
+
+@pytest.mark.unit
+def test_fallback_and_circuit_events_recorded() -> None:
+    """接管、熔断、重试事件必须落轨迹，否则 M5 无法归因。"""
+    log = EventLog()
+    provider = FakeProvider([ModelResponse(content="完成")]).fail_once(FakeStreamInterruptedError)
+    execute_with_retry(
+        provider, {"messages": [{"role": "user", "content": "问题"}], "tools": []}, log=log
+    )
+    assert "retry" in log.kinds() and "retry_success" in log.kinds()

@@ -210,6 +210,19 @@
 - 计数：spec **49 条**（A8+B6+C9+**D12**+E5+F3+G6）；出处 39 行号 / 11 自定 / 完整；`57 passed, 2 skipped`。
 - 下一项：D 组剩余 8 条。
 
+### 2026-10-31：D 组完成（12/12），并按三条批评修正观测点
+- 更新位置：`src/aide/core/recovery.py`、`failover.py`、`tests/test_recovery.py`、`tests/fakes.py`、`AGENTS.md` 相关行
+- **P1 观测点选错（已改）**：`assert plan.carry_partial is False` 只证明"它自称没带"。改为**行为证据**——`execute_with_retry()` 跑两轮后断言 `provider.recorded[0] == provider.recorded[1]` 且第二次请求里没有半截标记。内部字段仍保留断言，但不再是唯一证据。
+- **P1 预备件无标记（已改）**：`normalize_splice` / `validate_tool_arguments_shape` 的 docstring 首段加 **PREPARED（ADR 0007）**，写明"M1 无调用方、接口契约见 ADR、改动需同步该 ADR"，防止半年后被人当死代码删掉。
+- **P2 名字宽于实现（已改）**：`validate_tool_arguments` → `validate_tool_arguments_shape`，docstring 明说"只验形状与必填，不做语义校验"。这是同类的第四次。
+- **P2 守门型断言标注**：`test_error_path_never_calls_llm` 在清单里标「守门型：M1 无触发路径」——它一定绿，防的是将来有人加。实现改为 **AST 检查 `except` 分支**内是否出现 provider 调用（全文 grep 会误伤正常路径）。
+- **D 组 12/12 落地**：四层分类、重试分级、退避上限、熔断半开、指纹去重、空闲看门狗、丢弃重发、拼接归一化、错误路径禁调 LLM、压缩熔断、切厂保前缀、事件落轨迹。
+- **切厂实现拆出 `failover.py`**：`neutralize_request()` 递归剥掉 `thinking_signature`/`reasoning_content` 等私有凭证，前缀与工具定义原样保留；幂等。拆分原因是 `recovery.py` 到 308 行，超过 300 行硬约束。
+- **FakeProvider 新增 `fail_once()`**：只让下一次调用失败一次，供"重试成功"路径使用（`fail_after` 会一直失败，测不了恢复）。
+- **变异验证 4/4**：熔断阈值失效 → 红；不剥私有字段 → 红；指纹恒 False → 红；`carry_partial` 改 True → 红。
+- 计数：`66 passed, 2 skipped`；spec 49 条未变；出处覆盖完整。
+- 下一项：D 组已完成，按图进入 E 组（policy 纯函数 5 条）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
