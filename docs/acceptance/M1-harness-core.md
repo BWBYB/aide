@@ -112,7 +112,7 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 | `test_policy_denies_write_to_readonly_root` | 写 `book/` 或旧 RAG 仓库 → **deny** | M1 | AGENTS.md 二节；harness:45 |
 | `test_policy_requires_approval_for_exec` | `exec` 类动作 → **need_approval** | M1 | harness:45 |
 | `test_policy_blocks_destructive_pattern` | `rm -rf` / 删库重建 / 覆盖未读文件 → deny 或 need_approval | M1 | harness:45 |
-| `test_policy_denies_symlink_escape` | 解析 symlink 后逃出 sandbox root → deny | M1 | **自定，无 skill 出处** |
+| `test_policy_denies_symlink_escape` | 解析 symlink 后逃出 sandbox root → deny。**resolver 作为参数注入**（默认 `os.path.realpath`），否则 `evaluate()` 不再是纯函数，且测试受平台差异影响 | M1 | **自定，无 skill 出处** |
 
 ### F. 机制登记（入口 + 留痕）
 

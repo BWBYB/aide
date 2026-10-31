@@ -223,6 +223,18 @@
 - 计数：`66 passed, 2 skipped`；spec 49 条未变；出处覆盖完整。
 - 下一项：D 组已完成，按图进入 E 组（policy 纯函数 5 条）。
 
+### 2026-10-31：E 组 5/5 落地；修守门范围被文件拆分架空
+- 更新位置：`src/aide/core/policy.py`、`tests/test_policy.py`、`tests/test_recovery.py`
+- **P0 守门范围失效（已修）**：`test_error_path_never_calls_llm` 只扫 `recovery.py` 单文件，而本轮把切厂逻辑拆到 `failover.py`——新文件里的错误路径永远不被检查。改为扫 `src/aide/core/*.py` 全目录。**实测**：往 core 放一个 `except` 里调 `provider.complete()` 的探针文件，测试立刻红；删除后恢复绿。
+- **AST 守门的边界写进 docstring**：只能看见**直接调用**；回调、依赖注入、`getattr(obj, name)` 间接触发查不到。它是第一层，第二层留到 M5（用轨迹里 `stop_reason` 与 token 消耗的对应关系反推）。
+- **`failover.py` 确认是真解耦**：27 行、零 import，不依赖 `recovery.py` 即可单独理解与测试——不是转发壳，27 行是对的（一个关注点就可以很小）。
+- **E 组 5 条全部落地**：路径逃逸、只读区、exec 审批、破坏性模式、symlink 逃逸。**`resolve` 作为参数注入**（默认 `os.path.realpath`），因此五条都是纯函数，不碰真实文件系统，也不受 macOS `/tmp → /private/tmp` 影响。
+- **实现中抓到一个真 bug**：`rm -rf /` 原本被判 `need_approval`，因为正则结尾用 `\b`，而 `/` 是非单词字符，词边界不成立。改成 `(\s|$)` 后正确 `deny`。`rm -rf build/` 仍为 `need_approval`——**删根目录与删构建产物不是一个量级**。
+- 另外顺手确认：`/sandbox2` 不会被当成 `/sandbox` 的子路径（用 `commonpath` 而非字符串前缀）。
+- 变异验证：关掉路径包含校验 → 逃逸与 symlink 两条同时红。
+- 计数：`72 passed, 2 skipped`；spec 49 条未变（E 组 5 条本就计入）。
+- 下一项：F 组已随 M0/M1 机制完成；剩 B/C/D/E 之外的最后一块是 `loop` 与 `policy` 的接线（M1 收口）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

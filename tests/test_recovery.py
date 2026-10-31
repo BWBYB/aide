@@ -213,21 +213,28 @@ def test_error_path_never_calls_llm() -> None:
 
     M1 的错误路径当前没有 LLM 调用，所以这条一定绿——它防的是「将来有人加」。
     用 AST 检查 `except` 分支内是否出现 provider 调用，而不是全文 grep
-    （正常路径本来就该调 provider）。
-    """
-    tree = ast.parse(pathlib.Path("src/aide/core/recovery.py").read_text(encoding="utf-8"))
-    banned = {"complete", "generate", "chat"}
+    （正常路径本来就该调 provider）。**扫整个 core 目录**：只扫单文件时，
+    拆分出去的新文件会永远不被检查。
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ExceptHandler):
-            continue
-        for inner in ast.walk(node):
-            if (
-                isinstance(inner, ast.Call)
-                and isinstance(inner.func, ast.Attribute)
-                and inner.func.attr in banned
-            ):
-                raise AssertionError(f"异常分支里调用了模型：{inner.func.attr}")
+    边界：AST 只能看见**直接调用**。若错误路径通过回调、依赖注入或
+    getattr(obj, name) 间接触发 LLM，这条查不到——它是守门的第一层，不是全部。
+    第二层留到 M5：用轨迹里 stop_reason 与 token 消耗的对应关系反推。
+    """
+    banned = {"complete", "generate", "chat"}
+    # 扫整个 core 目录，不扫单文件：拆分文件时若只扫一个，
+    # 新文件里的错误路径就永远不会被检查（本轮 failover.py 正是这样被拆出去的）。
+    for path in sorted(pathlib.Path("src/aide/core").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ExceptHandler):
+                continue
+            for inner in ast.walk(node):
+                if (
+                    isinstance(inner, ast.Call)
+                    and isinstance(inner.func, ast.Attribute)
+                    and inner.func.attr in banned
+                ):
+                    raise AssertionError(f"{path.name} 的 except 分支里调用了模型：{inner.func.attr}")
 
 
 @pytest.mark.unit

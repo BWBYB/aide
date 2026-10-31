@@ -43,6 +43,7 @@ ENTRY_MODULES = [
     "aide.core.compressor",
     "aide.core.recovery",
     "aide.core.failover",
+    "aide.core.policy",
 ]
 
 PROBE = r"""
