@@ -38,7 +38,7 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1 可执行 46 条**（A8 + B6 + C7 + D11 + E5 + F3 + G6）。
+按声明的 skill 分组，**M1 可执行 47 条**（A8 + B6 + C8 + D11 + E5 + F3 + G6）。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之四、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
@@ -64,7 +64,7 @@ make test
 | `test_state_bar_has_five_fields` | 时间戳、工具计数、TODO（四态）、最近错误摘要、系统状态（cwd/OS/Shell/Python） | M1 | state-bar:82-88 |
 | `test_tool_counter_maintained_by_code` | 构造"模型自称 3 次、实际 2 次"，断言计数为 **2** | M1 | state-bar:95 |
 | `test_state_bar_replaced_each_turn` | 第 N 轮只有一条状态栏；若改持久追加，须给出 token 增长曲线实测 | M1 | state-bar:63-70 |
-| `test_state_bar_survives_compression` | 压缩后状态栏仍是最末一条且为当前轮。**当前为占位实现**：用 `trajectory[-2:]` 切片模拟压缩，未调用真实压缩器；C 组完成后必须改为调用 `compress()`，否则只覆盖装配顺序、不覆盖"压缩后存活" | M1 | state-bar:97 |
+| `test_state_bar_survives_compression` | 经真实 `compress()` 压缩后，状态栏仍是最末一条、内容为当前轮、且压缩确实变小（原占位切片实现已替换） | M1 | state-bar:97 |
 | `test_state_bar_not_polluted_by_external_content` | 网页/工具结果不得被直接写入状态栏 | M1 | state-bar:96 |
 
 ### C. 压缩（`context-compression`）
@@ -75,6 +75,7 @@ make test
 | `test_compression_batch_with_compressed_marker` | 一次性批量压未标记结果；已压内容打 `[COMPRESSED]` 且不重复处理 | M1 | compress:61-69 |
 | `test_compression_is_layered_light_to_heavy` | 按五层由轻到重：预算控制→删噪声→API 微压缩→归档摘要→全量压缩。**隔离是替代方案，不是一层**。M1 只实现 1/2/4/5 四层，第 3 层（API 微压缩）不可用须留 skipped 记录 | M1 | compress:26,61-69 |
 | `test_compression_records_skipped_layers_with_reason` | 不可用的层（API 微压缩）必须出现在 `steps` 里并带跳过原因，**不得静默跳过**——否则"五层"变成"四层"而无人察觉 | M1 | compress:61-69 |
+| `test_count_tokens_weights_cjk_per_char` | 中文按 1 字 1 token；改回 `len//3` 这类英文系数即红（否则压缩阈值在生产上永不触发） | M1 | **自定**（ADR 0005） |
 | `test_compression_keeps_trace_pointer` | 压缩后保留原始轨迹索引，可回溯 | M1 | compress:61-69 |
 | `test_status_bar_only_compression_is_refused` | 压到"只剩系统提示+状态栏"必须被拒或标记高危 | M1 | state-bar:97 |
 | `test_summary_preserves_four_categories` | 摘要必保 decisions / constraints / failures / citations | M1 | compress:80 |
@@ -191,11 +192,15 @@ compress(messages, limits, count_tokens, summarize_fn=None) -> CompressionResult
 
 ### 3. token 估算口径（必须先定，否则阈值无意义）
 
-M1 用**可注入**的 `count_tokens: Callable[[str], int]`，默认实现为 `len(text) // 3` 的字符近似。
-中文与代码的实际比值偏差较大，因此：
+M1 用**可注入**的 `count_tokens: Callable[[str], int]`，默认实现 **CJK 按 1 字 1 token、其余 4 字符 1 token**
+（见 ADR 0005）。第一版曾用 `len(text)//3`，在中文语料上低估约 3 倍：
+
+- 窗口 128K、阈值 80% 时，`len//3` 要等到 307K 字符才认为达标，压缩**在生产上永不触发**
+- 而断言只依赖同一口径的相对关系，所以测试全绿、线上失效——最隐蔽的一类
 
 - 断言只依赖"同一个 count_tokens 下的相对关系"，不硬编码绝对 token 数
-- 偏差记入 ADR 0005（待写），M5 接真实 tokenizer 时替换并重测
+- `test_count_tokens_weights_cjk_per_char` 挡住回退：改回英文系数即红
+- M5 接真实 tokenizer 时只替换这一个函数，阈值语义不变
 
 ### 4. 断言 → 依赖 → 顺序
 
@@ -214,7 +219,7 @@ M1 用**可注入**的 `count_tokens: Callable[[str], int]`，默认实现为 `l
 
 | 断言 | 现状 | 处置 |
 |---|---|---|
-| `test_state_bar_survives_compression`（B 组） | **占位实现**：用 `trajectory[-2:]` 切片模拟压缩，**没有调用任何压缩器** | C 组完成后**必须改为调用真实 `compress()`**，并断言状态栏未被压缩吞掉。未改之前，该断言只覆盖"装配顺序"，不覆盖"压缩后存活"——清单里已标注 |
+| `test_state_bar_survives_compression`（B 组） | **已改为真实调用**：C 组落地时同步替换，现调用 `compress()` 并断言状态栏仍为末条、内容为当前轮、`tokens_after <= tokens_before` | 原占位（`trajectory[-2:]` 切片）已删除，不存在"同名不同义" |
 | `test_status_bar_only_compression_is_refused`（C 组） | 未实现 | 依赖编排器拒绝分支 + B 组 `build_state_bar` |
 
 ## 三之四、阶段边界（这 7 条不属于 M1）

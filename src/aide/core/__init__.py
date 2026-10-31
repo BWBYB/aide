@@ -9,6 +9,19 @@ from .context import (
     wrap_state_bar,
 )
 from .message import Msg, ToolCall
+from .compressor import (
+    COMPRESSED_MARK,
+    CompressionResult,
+    CompressionStep,
+    Summary,
+    archive_summarize,
+    cap_tool_output,
+    compress,
+    count_tokens,
+    drop_noise,
+    full_compress,
+    only_system_and_state_bar,
+)
 from .loop import (
     Limits,
     LoopResult,

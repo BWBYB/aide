@@ -178,6 +178,17 @@
 - 计数：spec **46 条**（A8+B6+**C7**+D11+E5+F3+G6）；出处 37 行号 / 9 自定 / 完整；`41 passed, 2 skipped`（本轮未写代码）。
 - 下一项：按施工图顺序写 C 组（1 → 2 → 4 → 5 → 编排器 → 拒绝分支）。
 
+### 2026-10-31：M1 C 组压缩落地（四层 + 编排器，46 → 47）
+- 更新位置：`src/aide/core/compressor.py`、`tests/test_compression.py`、`tests/test_state_bar.py`、`docs/adr/0005`、`docs/adr/0006`
+- **`count_tokens` 改为 CJK 感知**（用户指出原系数低估 3 倍）：`cjk*1 + 非cjk//4`。原 `len//3` 在 128K 窗口下要 307K 字符才达 80% 阈值，**压缩在生产上永不触发**，而断言只用相对关系，测试仍全绿。新增 `test_count_tokens_weights_cjk_per_char` 挡回退。见 ADR 0005。
+- **五层落四层**：`cap_tool_output` / `drop_noise` / ~~api_micro~~ / `archive_summarize` / `full_compress`。第 3 层依赖 provider context-editing，本地不可实现，但**每次 `compress()` 都在 steps 里留 skipped 记录**。见 ADR 0006。
+- **压缩反而变大时回退（实现过程中发现的真问题）**：首版对 400 字符的工具结果做摘要，结果 token 从 836 涨到 883。现在每层都要过 `settle()` 闸：不变量级就回退并把原因写进 step。
+- **拒绝分支在纯函数内部**：压完只剩"系统提示 + 状态栏"→ `refused=True` 且**不改动消息**；summarizer 返回 `None` 表示"这段无保留价值"，使该分支可达、可测。
+- **B 组占位断言已替换为真实调用**：`test_state_bar_survives_compression` 原先用 `trajectory[-2:]` 切片模拟，现在真调 `compress()` 并断言状态栏仍末条、内容为当前轮、`tokens_after <= tokens_before`。因此**没有启用 xfail(strict) 挂账**——占位已不存在，挂一个空 xfail 反而是噪声。
+- **变异测试 4/4 有效**（含清 pyc）：删 skipped 步骤 → 红；`count_tokens` 改回 `len//3` → 红；去掉回退闸 → 红；去掉拒绝分支 → 红。还原后 `50 passed, 2 skipped`。
+- 计数：spec **47 条**（A8+B6+**C8**+D11+E5+F3+G6）；出处 37 行号 / 10 自定 / 完整。
+- 下一项：D 组（故障分类、熔断、看门狗、流式恢复、指纹去重）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

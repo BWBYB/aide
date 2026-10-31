@@ -10,7 +10,9 @@ from datetime import datetime
 
 import pytest
 
+from aide.core.compressor import Summary, compress
 from aide.core.context import Prefix, ToolSpec, assemble_context
+from aide.core.loop import Limits
 from aide.core.message import Msg, ToolCall
 from aide.core.state_bar import (
     ErrorSummary,
@@ -131,15 +133,28 @@ def test_state_bar_replaced_each_turn() -> None:
 
 @pytest.mark.unit
 def test_state_bar_survives_compression() -> None:
-    """轨迹被压缩后，状态栏仍是最末一条且为当前轮。"""
-    trajectory = two_call_trace()
-    compressed = trajectory[-2:]  # 模拟压缩：只保留最近两步
-    body = build_state_bar(TraceSummary.from_trace(trajectory, system=SYSTEM), LATER)
-    messages = assemble_context(make_prefix(), compressed, body)
+    """轨迹被**真实压缩**后，状态栏仍是最末一条且为当前轮。
 
-    assert messages[-1].role == "user"
-    assert LATER.isoformat(timespec="seconds") in (messages[-1].content or "")
-    assert len(messages) == len(compressed) + 2
+    原版用 `trajectory[-2:]` 切片模拟压缩，没有调用压缩器——只覆盖装配顺序，
+    不覆盖"压缩后存活"。C 组落地后改为真实调用 `compress()`。
+    """
+    trajectory = two_call_trace()
+    body = build_state_bar(TraceSummary.from_trace(trajectory, system=SYSTEM), LATER)
+    messages = assemble_context(make_prefix(), trajectory, body)
+
+    limits = Limits(max_turns=8, max_tokens=10**6, max_seconds=600, context_window=40)
+    result = compress(
+        messages,
+        limits=limits,
+        summarize_fn=lambda _chunk: Summary(decisions=("压缩中",)),
+        max_tool_output_chars=10,
+    )
+
+    last = result.messages[-1]
+    assert last.role == "user"
+    assert LATER.isoformat(timespec="seconds") in (last.content or ""), "状态栏内容不是当前轮"
+    assert (last.content or "").count("<agent_status>") == 1
+    assert result.tokens_after <= result.tokens_before, "压缩没有变小却接受了结果"
 
 
 @pytest.mark.unit
