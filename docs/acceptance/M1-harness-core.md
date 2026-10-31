@@ -38,7 +38,7 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1 可执行 48 条**（A8 + B6 + C9 + D11 + E5 + F3 + G6）。
+按声明的 skill 分组，**M1 可执行 49 条**（A8 + B6 + C9 + D12 + E5 + F3 + G6）。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之四、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
@@ -93,7 +93,8 @@ make test
 | `test_circuit_breaker_opens_then_half_opens` | 连续失败达阈值（默认 **3**）后打开；冷却后半开探测，成功一次才恢复 | M1 | error:42 |
 | `test_repeated_tool_fingerprint_detected` | 对「工具名+参数」算指纹，重复即判无进展循环 | M1 | error:26 |
 | `test_stream_idle_watchdog_kills_stalled_stream` | 独立空闲看门狗：连接建立但无数据超阈值即判定卡死并主动重试 | M1 | error:28,65 |
-| `test_stream_interruption_resumes_from_last_block` | 从最后一个完整块续传；半截工具调用转文字补完并按指纹去重 | M1 | error:46,59,71 |
+| `test_stream_interruption_discards_partial_and_retries` | **策略①**：丢弃半截内容整轮重发，`carry_partial=False`；②③ 调用即显式抛 `NotImplementedError`（本地不可验证，见 ADR 0007）。原名 `..._resumes_from_last_block` 与原文不符——原文给的是三种策略，默认最稳的是①，「续传」是②③的说法 | M1 | error:46 |
+| `test_stream_resume_splice_is_normalized` | 续写拼接后去重前缀与多余空白；参数合法但语义错误（空值/缺参）必须被检出。**这是"格式合法 ≠ 语义正确"的唯一检查点** | M1 | error:46,71 |
 | `test_error_path_never_calls_llm` | 错误处理路径禁用会再调模型的副作用逻辑，并用递归深度计数兜底 | M1 | error:44,69 |
 | `test_compression_circuit_breaker_after_3_failures` | 压缩连续失败 3 次即放弃并暴露 | M1 | error:42；compress:69 |
 | `test_fallback_preserves_prefix` | 切厂时前缀逐字节一致；厂商私有凭证一律丢弃，历史调用改写为文字叙述 | M1 | error:61 |

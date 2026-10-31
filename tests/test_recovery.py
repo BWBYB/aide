@@ -10,7 +10,16 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from aide.core.recovery import FaultLayer, StreamWatchdog, classify, should_kill
+from aide.core.recovery import (
+    FaultLayer,
+    StreamStrategy,
+    StreamWatchdog,
+    classify,
+    decide_recovery,
+    normalize_splice,
+    should_kill,
+    validate_tool_arguments,
+)
 
 NOW = datetime(2026, 10, 31, 10, 0, 0)
 
@@ -49,6 +58,9 @@ def test_stream_idle_watchdog_kills_stalled_stream() -> None:
     assert watchdog.check(NOW - timedelta(seconds=29), NOW) is False
     assert aborted == [], "未超时不应中止"
 
+    # 边界值：正好 30s 必须杀。`>=` 与 `>` 都"看起来合理"，这里把它钉死
+    assert should_kill(NOW - timedelta(seconds=30), NOW, 30) is True
+
     assert should_kill(NOW - timedelta(seconds=31), NOW, 30) is True
     assert watchdog.check(NOW - timedelta(seconds=31), NOW) is True
     assert len(aborted) == 1 and "空闲超时" in aborted[0]
@@ -56,6 +68,40 @@ def test_stream_idle_watchdog_kills_stalled_stream() -> None:
     # 重复检查不得重复中止（避免一次故障触发多次重试）
     watchdog.check(NOW - timedelta(seconds=41), NOW)
     assert len(aborted) == 1
+
+
+@pytest.mark.unit
+def test_stream_interruption_discards_partial_and_retries() -> None:
+    """M1 只做策略①：丢弃半截内容整轮重发，不携带任何半截文本。
+
+    名字照实写——没有"续"，所以不能叫 resumes（error-recovery:46 把三种策略列全了，
+    且默认最稳的是①）。②③ 依赖厂商能力，本地不可验证，调用即显式抛错。
+    """
+    plan = decide_recovery()
+    assert plan.strategy is StreamStrategy.DISCARD_RETRY
+    assert plan.carry_partial is False, "策略①不得把半截内容带进下一轮"
+    assert plan.action == "retry_whole_turn"
+
+    for unsupported in (StreamStrategy.PARTIAL_AS_ASSISTANT, StreamStrategy.META_INSTRUCTION):
+        with pytest.raises(NotImplementedError):
+            decide_recovery(unsupported)
+
+
+@pytest.mark.unit
+def test_stream_resume_splice_is_normalized() -> None:
+    """续写拼接后去重前缀与多余空白；参数合法但语义错误必须被检出。
+
+    这是"格式合法 ≠ 语义正确"的唯一检查点：前若干条断言都在验结构对不对，
+    这条验拼出来的东西还对不对。
+    """
+    assert normalize_splice("前缀 ABC", "ABC 后续") == "前缀 ABC 后续"
+    assert normalize_splice("第一行  \n第二行  ", "") == "第一行\n第二行"
+
+    assert validate_tool_arguments({"path": "a.md"}, ("path",)) is None
+    empty = validate_tool_arguments({"path": "   "}, ("path",))
+    assert empty is not None and "语义不成立" in empty
+    missing = validate_tool_arguments({}, ("path",))
+    assert missing is not None and "缺少必填参数" in missing
 
 
 @pytest.mark.unit

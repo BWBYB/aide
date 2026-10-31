@@ -103,6 +103,16 @@ class CompressionStep:
 
 @dataclass(frozen=True)
 class CompressionResult:
+    """压缩产物。
+
+    契约：`refused=True` **只表示"不应带着这个上下文继续"，不代表 messages 是原始的**。
+    它承载两种语义：
+      1. 只剩状态栏 → messages 是**原始未改动**的（拒绝执行）；
+      2. 四层用尽仍超阈值 → messages 是**已压缩**的（尽力而为）。
+    两种情况下调用方都应始终使用 `result.messages`——它是当前可得的最优结果。
+    若编排器写成"refused 就退回原始 messages"，类型 2 的压缩收益会白丢。
+    """
+
     messages: tuple[Msg, ...]
     steps: tuple[CompressionStep, ...]
     refused: bool

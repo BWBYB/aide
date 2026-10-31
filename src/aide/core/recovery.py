@@ -63,6 +63,57 @@ def should_kill(last_data_at: datetime, now: datetime, idle_timeout_seconds: flo
     return (now - last_data_at).total_seconds() >= idle_timeout_seconds
 
 
+class StreamStrategy(str, Enum):
+    """流式中断的三种恢复方式（error-recovery:46）。M1 只实现 DISCARD_RETRY。"""
+
+    DISCARD_RETRY = "discard_retry"  # ① 丢弃半截整轮重发：最贵但最稳
+    PARTIAL_AS_ASSISTANT = "partial_as_assistant"  # ② 依赖厂商原生支持，本地不可验证
+    META_INSTRUCTION = "meta_instruction"  # ③ 元指令接续，拼接有风险
+
+
+@dataclass(frozen=True)
+class RecoveryPlan:
+    action: str
+    carry_partial: bool
+    strategy: StreamStrategy
+
+
+def decide_recovery(strategy: StreamStrategy = StreamStrategy.DISCARD_RETRY) -> RecoveryPlan:
+    """决定中断后怎么恢复。②③ 在 M1 未实现，显式抛错而不是静默降级。"""
+    if strategy is not StreamStrategy.DISCARD_RETRY:
+        raise NotImplementedError(
+            f"{strategy.value} 需要真实厂商的流式能力，M1 无法验证（见 ADR 0007）"
+        )
+    return RecoveryPlan("retry_whole_turn", False, strategy)
+
+
+def normalize_splice(head: str, tail: str, *, scan: int = 200) -> str:
+    """续写拼接归一化：去掉重复前缀、压缩多余空白。
+
+    续写方式下拼接处容易多出重复字符——"参数合法不等于语义正确"（error-recovery:46）。
+    这是纯函数，与是否接真实流无关，因此 M1 就能测。
+    """
+    head_window = head[-scan:] if scan > 0 else head
+    overlap = 0
+    for size in range(min(len(head_window), len(tail)), 0, -1):
+        if head_window.endswith(tail[:size]):
+            overlap = size
+            break
+    merged = head + tail[overlap:]
+    return "\n".join(line.rstrip() for line in merged.split("\n")).strip()
+
+
+def validate_tool_arguments(arguments: dict, required: tuple[str, ...]) -> str | None:
+    """重新解析校验：参数合法但语义错误也要检出（空值、占位符）。"""
+    for key in required:
+        if key not in arguments:
+            return f"缺少必填参数：{key}"
+        value = arguments[key]
+        if isinstance(value, str) and not value.strip():
+            return f"参数 {key} 为空字符串（语法合法，语义不成立）"
+    return None
+
+
 @dataclass
 class StreamWatchdog:
     """带中止回调的看门狗。`check()` 命中即调用一次 `abort`，重复调用不会重复中止。"""

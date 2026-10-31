@@ -200,6 +200,16 @@
 - 计数：spec **48 条**（A8+B6+**C9**+D11+E5+F3+G6）；出处 38 行号 / 11 自定 / 完整。
 - 下一项：D 组剩余 9 条（重试分级、退避上限、熔断半开、指纹去重、流式续传、错误路径禁调 LLM、压缩熔断、切厂保前缀、事件落轨迹）。
 
+### 2026-10-31：流式策略定名与拼接归一化（48 → 49）
+- 更新位置：`src/aide/core/recovery.py`、`compressor.py`、`tests/test_recovery.py`、`docs/adr/0007`、`M1-harness-core.md`
+- **`refused` 的两种语义写进契约**：`CompressionResult` docstring 明确——`refused=True` 只表示"不应带着这个上下文继续"，**不代表 messages 是原始的**；类型 1（只剩状态栏）返回原始消息，类型 2（四层用尽）返回**已压缩**消息。调用方永远用 `result.messages`。不写死，M4 的编排器很可能写成"refused 就退回原始"，白丢压缩收益。
+- **P0 断言名与原文不符（已改）**：原 `test_stream_interruption_resumes_from_last_block` 暗示"从最后完整块续传"，但 `error-recovery:46` 给的是三种策略且默认最稳是①（丢弃整轮重发）——那是"重来"不是"续"。改名为 `test_stream_interruption_discards_partial_and_retries`，建 ADR 0007 记录三策略与解除条件。
+- **②③ 显式抛 `NotImplementedError`**，不静默降级：依赖厂商流式能力，本地不可验证（与压缩第 3 层同构）。
+- **新增 `test_stream_resume_splice_is_normalized`**：`normalize_splice()` 去重前缀 + 压空白，`validate_tool_arguments()` 检出"语法合法但语义不成立"（空值/缺参）。这是**"格式合法 ≠ 语义正确"的唯一检查点**，前若干条都在验结构对不对。做成纯函数是因为它与是否接真实流无关——否则只会变成一条没有代码路径的空断言。
+- **P2 看门狗边界值补齐**：`should_kill(30s 整)` 必须为 True，把 `>=` 与 `>` 的分界钉死。变异验证：改成 `>` → 红；`carry_partial` 改 True → 红。
+- 计数：spec **49 条**（A8+B6+C9+**D12**+E5+F3+G6）；出处 39 行号 / 11 自定 / 完整；`57 passed, 2 skipped`。
+- 下一项：D 组剩余 8 条。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
