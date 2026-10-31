@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pytest
 
-from aide.core.compressor import Summary, compress
+from aide.core.compressor import CompressionConfig, Summary, compress
 from aide.core.context import Prefix, ToolSpec, assemble_context
 from aide.core.loop import Limits
 from aide.core.message import Msg, ToolCall
@@ -146,8 +146,10 @@ def test_state_bar_survives_compression() -> None:
     result = compress(
         messages,
         limits=limits,
-        summarize_fn=lambda _chunk: Summary(decisions=("压缩中",)),
-        max_tool_output_chars=10,
+        config=CompressionConfig(
+            summarize_fn=lambda _chunk: Summary(decisions=("压缩中",)),
+            max_tool_output_chars=10,
+        ),
     )
 
     last = result.messages[-1]

@@ -9,6 +9,7 @@ import pytest
 
 from aide.core.compressor import (
     COMPRESSED_MARK,
+    CompressionConfig,
     Summary,
     archive_summarize,
     compress,
@@ -82,12 +83,12 @@ def test_compression_trigger_uses_declared_threshold() -> None:
     assert result.steps[0].layer == "trigger"
 
     big = base_messages(tool_size=3000)
-    triggered = compress(big, limits=limits(100), summarize_fn=fixed_summary)
+    triggered = compress(big, limits=limits(100), config=CompressionConfig(summarize_fn=fixed_summary))
     assert triggered.changed
     assert triggered.tokens_after < triggered.tokens_before
 
     # 压缩做了反而变大时必须回退（对噪声做摘要只是浪费 token）
-    unhelpful = compress(base_messages(tool_size=400), limits=limits(100), summarize_fn=fixed_summary)
+    unhelpful = compress(base_messages(tool_size=400), limits=limits(100), config=CompressionConfig(summarize_fn=fixed_summary))
     assert not unhelpful.changed
     assert unhelpful.tokens_after == unhelpful.tokens_before
     assert any("已回退" in step.reason for step in unhelpful.steps)
@@ -97,12 +98,12 @@ def test_compression_trigger_uses_declared_threshold() -> None:
 def test_compression_batch_with_compressed_marker() -> None:
     """超长工具结果一次性截断并打标，已打标的不重复处理。"""
     messages = base_messages(tool_size=3000)
-    first = compress(messages, limits=limits(100), summarize_fn=fixed_summary)
+    first = compress(messages, limits=limits(100), config=CompressionConfig(summarize_fn=fixed_summary))
     marked = [m for m in first.messages if COMPRESSED_MARK in (m.content or "")]
     assert marked, "没有任何消息被打上压缩标记"
 
     # 再压一次：已打标的不得被二次截断（幂等）
-    second = compress(list(first.messages), limits=limits(100), summarize_fn=fixed_summary)
+    second = compress(list(first.messages), limits=limits(100), config=CompressionConfig(summarize_fn=fixed_summary))
     for message in second.messages:
         if COMPRESSED_MARK in (message.content or ""):
             assert (message.content or "").count(COMPRESSED_MARK) == 1
@@ -114,13 +115,13 @@ def test_compression_is_layered_light_to_heavy() -> None:
 
     轻的一层够用时，重的层不应被执行。
     """
-    heavy = compress(base_messages(tool_size=3000), limits=limits(100), summarize_fn=fixed_summary)
+    heavy = compress(base_messages(tool_size=3000), limits=limits(100), config=CompressionConfig(summarize_fn=fixed_summary))
     names = heavy.layer_names()
     assert names.index("cap_tool_output") < names.index("api_micro_compression")
     assert names.index("api_micro_compression") < names.index("archive_summarize")
     assert names.index("archive_summarize") < names.index("full_compress")
 
-    light = compress(base_messages(tool_size=3000), limits=limits(5_000), summarize_fn=fixed_summary)
+    light = compress(base_messages(tool_size=3000), limits=limits(5_000), config=CompressionConfig(summarize_fn=fixed_summary))
     assert "archive_summarize" not in light.layer_names(), "轻层够用时不应进入重层"
 
 
@@ -153,11 +154,27 @@ def test_summary_preserves_four_categories() -> None:
 @pytest.mark.unit
 def test_compression_records_skipped_layers_with_reason() -> None:
     """第 3 层不可用时必须出现在 steps 里并带原因，不得静默跳过。"""
-    result = compress(base_messages(tool_size=3000), limits=limits(100), summarize_fn=fixed_summary)
+    result = compress(base_messages(tool_size=3000), limits=limits(100), config=CompressionConfig(summarize_fn=fixed_summary))
     skipped = [step for step in result.steps if step.layer == "api_micro_compression"]
     assert len(skipped) == 1, "不可用的层没有留痕"
     assert skipped[0].changed is False
     assert "context-editing" in skipped[0].reason
+
+
+@pytest.mark.unit
+def test_compression_reports_failure_when_layers_cannot_reach_threshold() -> None:
+    """四层都压不动时必须报失败，不能声称成功。
+
+    「做了动作」不等于「达成目标」——和 `test_completion_claim_requires_verifier`
+    同构：压缩跑完了所有层，但 tokens 仍高于阈值，此时 refused 必须为 True，
+    否则调用方会带着超长上下文进入下一轮，被 API 打回。
+    """
+    messages = [Msg(role="assistant", content="很长的正文" * 200) for _ in range(4)]
+    result = compress(messages, limits=limits(100))  # 未注入 summarizer，重层无法生效
+
+    assert result.refused is True
+    assert "仍未低于阈值" in (result.refusal_reason or "")
+    assert result.tokens_after > 80, "构造的场景本应压不到阈值"
 
 
 @pytest.mark.unit
@@ -171,8 +188,7 @@ def test_status_bar_only_compression_is_refused() -> None:
     result = compress(
         messages,
         limits=limits(100),
-        summarize_fn=drop_everything,
-        keep_recent=0,
+        config=CompressionConfig(summarize_fn=drop_everything, keep_recent=0),
     )
     assert result.refused, "只剩状态栏时未拒绝"
     assert result.refusal_reason and "状态栏" in result.refusal_reason

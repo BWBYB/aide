@@ -84,6 +84,17 @@ class FailureBreaker:
 
 
 @dataclass(frozen=True)
+class CompressionConfig:
+    """压缩配置。整体可替换、可序列化进 ADR，测试里只改某一项即可。"""
+
+    count: Callable[[str], int] = count_tokens
+    summarize_fn: Callable[[Sequence[Msg]], "Summary | None"] | None = None
+    policy: NoisePolicy = NoisePolicy()
+    max_tool_output_chars: int = DEFAULT_TOOL_OUTPUT_CHARS
+    keep_recent: int = 4
+
+
+@dataclass(frozen=True)
 class CompressionStep:
     layer: str
     changed: bool
@@ -202,13 +213,10 @@ def compress(
     messages: Sequence[Msg],
     *,
     limits: Limits,
-    count: Callable[[str], int] = count_tokens,
-    summarize_fn: Callable[[Sequence[Msg]], Summary | None] | None = None,
-    policy: NoisePolicy = NoisePolicy(),
-    max_tool_output_chars: int = DEFAULT_TOOL_OUTPUT_CHARS,
-    keep_recent: int = 4,
+    config: CompressionConfig = CompressionConfig(),
 ) -> CompressionResult:
     """按五层由轻到重压缩，直到低于阈值。纯函数。"""
+    count = config.count
     threshold = limits.compression_threshold()
     before = message_tokens(messages, count)
     steps: list[CompressionStep] = []
@@ -246,7 +254,7 @@ def compress(
     capped, layer1_changed = [], False
     for message in body:
         if message.role == "tool":
-            new_text, changed = cap_tool_output(message.content or "", max_tool_output_chars)
+            new_text, changed = cap_tool_output(message.content or "", config.max_tool_output_chars)
             if changed:
                 layer1_changed = True
                 capped.append(Msg(role="tool", content=new_text, tool_call_id=message.tool_call_id))
@@ -256,7 +264,7 @@ def compress(
 
     # 第 2 层：噪声直接删除
     if message_tokens(rebuild(body), count) > threshold:
-        dropped_body, dropped = drop_noise(body, policy)
+        dropped_body, dropped = drop_noise(body, config.policy)
         settle(dropped_body, "drop_noise", dropped > 0, f"删除 {dropped} 条噪声")
 
     # 第 3 层：不可用，但必须留痕
@@ -264,18 +272,18 @@ def compress(
 
     # 第 4 层：归档式摘要
     if message_tokens(rebuild(body), count) > threshold:
-        if summarize_fn is None:
+        if config.summarize_fn is None:
             steps.append(CompressionStep("archive_summarize", False, "未注入 summarizer，跳过"))
         else:
-            archived_body, archived = archive_summarize(body, summarize_fn, keep_recent)
+            archived_body, archived = archive_summarize(body, config.summarize_fn, config.keep_recent)
             settle(archived_body, "archive_summarize", archived > 0, f"归档 {archived} 条消息")
 
     # 第 5 层：全量压缩
     if message_tokens(rebuild(body), count) > threshold:
-        if summarize_fn is None:
+        if config.summarize_fn is None:
             steps.append(CompressionStep("full_compress", False, "未注入 summarizer，跳过"))
         else:
-            compressed_body, compressed = full_compress(body, summarize_fn, keep_recent=2)
+            compressed_body, compressed = full_compress(body, config.summarize_fn, keep_recent=2)
             settle(compressed_body, "full_compress", compressed > 0, f"全量压缩 {compressed} 条")
 
     result = rebuild(body)
@@ -284,5 +292,11 @@ def compress(
     if only_system_and_state_bar(result):
         reason = "压缩后只剩系统提示与状态栏：拒绝执行（状态栏是有损投影，会断崖式降低准确率）"
         return CompressionResult(tuple(messages), tuple(steps), True, reason, before, before)
+
+    # 「压了但没达标」对调用方等价于「拒绝」：不能带着这个上下文继续跑下一轮，
+    # 否则会被 API 以超长打回。区别只在 refusal_reason，调用方只需判一个字段。
+    if after > threshold:
+        reason = f"四层用尽仍未低于阈值（{after} > {threshold}）"
+        return CompressionResult(result, tuple(steps), True, reason, before, after)
 
     return CompressionResult(result, tuple(steps), False, None, before, after)

@@ -38,7 +38,7 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1 可执行 47 条**（A8 + B6 + C8 + D11 + E5 + F3 + G6）。
+按声明的 skill 分组，**M1 可执行 48 条**（A8 + B6 + C9 + D11 + E5 + F3 + G6）。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之四、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
@@ -76,6 +76,7 @@ make test
 | `test_compression_is_layered_light_to_heavy` | 按五层由轻到重：预算控制→删噪声→API 微压缩→归档摘要→全量压缩。**隔离是替代方案，不是一层**。M1 只实现 1/2/4/5 四层，第 3 层（API 微压缩）不可用须留 skipped 记录 | M1 | compress:26,61-69 |
 | `test_compression_records_skipped_layers_with_reason` | 不可用的层（API 微压缩）必须出现在 `steps` 里并带跳过原因，**不得静默跳过**——否则"五层"变成"四层"而无人察觉 | M1 | compress:61-69 |
 | `test_count_tokens_weights_cjk_per_char` | 中文按 1 字 1 token；改回 `len//3` 这类英文系数即红（否则压缩阈值在生产上永不触发） | M1 | **自定**（ADR 0005） |
+| `test_compression_reports_failure_when_layers_cannot_reach_threshold` | 四层跑完仍高于阈值时 `refused=True` 且原因含"仍未低于阈值"；**"做了动作"不等于"达成目标"** | M1 | **自定**（与 loop-engineering:18 同构） |
 | `test_compression_keeps_trace_pointer` | 压缩后保留原始轨迹索引，可回溯 | M1 | compress:61-69 |
 | `test_status_bar_only_compression_is_refused` | 压到"只剩系统提示+状态栏"必须被拒或标记高危 | M1 | state-bar:97 |
 | `test_summary_preserves_four_categories` | 摘要必保 decisions / constraints / failures / citations | M1 | compress:80 |

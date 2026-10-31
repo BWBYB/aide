@@ -189,6 +189,17 @@
 - 计数：spec **47 条**（A8+B6+**C8**+D11+E5+F3+G6）；出处 37 行号 / 10 自定 / 完整。
 - 下一项：D 组（故障分类、熔断、看门狗、流式恢复、指纹去重）。
 
+### 2026-10-31：补「压不到阈值」的失败态 + 配置收敛 + D 组看门狗
+- 更新位置：`src/aide/core/compressor.py`、`recovery.py`、`tests/test_compression.py`、`test_recovery.py`、`AGENTS.md`、`M1-harness-core.md`
+- **P1「假成功」修复**：`settle()` 只保证"每层不变大"，不保证"压到阈值以下"。极端情况：阈值 1024、当前 5000，每层各减 1 token，最终 4996 仍远超阈值却 `refused=False`，调用方带着超长上下文进下一轮被 API 打回。现按用户选的 B 方案收口：**压不下来也算拒绝**（保留已压缩消息，`refusal_reason` 写"四层用尽仍未低于阈值"）。调用方只判一个字段。新增 `test_compression_reports_failure_when_layers_cannot_reach_threshold`，与 `test_completion_claim_requires_verifier` 同构：做了动作 ≠ 达成目标。
+- **P2 参数收敛**：`compress(messages, *, limits, config=CompressionConfig())`，六个参数收成一个 frozen dataclass，D 组加 breaker、M5 换 count 都只改 config。测试里只改一项。
+- **替身测试三分法写进 `AGENTS.md`**：① 同轮已实现 → 改真实调用；② 未实现 → `xfail(strict=True)` + 解除条件；**不允许第三种：替身模拟却无标记**。
+- **D 组看门狗决策（用户要求先定）**：选「**纯判定 + 可注入中止回调**」，不引入线程。`should_kill(last_data_at, now, idle_timeout)` 毫秒级可测；`StreamWatchdog.check()` 命中即调 `abort` 一次（重复检查不重复中止）。理由：用线程要么不可靠（sleep 竞态），要么逼替身支持"永久阻塞"；判定函数把这两者都绕开。**FakeProvider 不需要改**。
+- 已落地 D 组前两条：`test_fault_classified_into_four_layers`（未知错误不得默认可重试）、`test_stream_idle_watchdog_kills_stalled_stream`（含"重复检查不重复中止"）。
+- 变异验证：去掉"仍未达标"分支 → 红；`should_kill` 恒 False → 红；还原后 `55 passed, 2 skipped`。
+- 计数：spec **48 条**（A8+B6+**C9**+D11+E5+F3+G6）；出处 38 行号 / 11 自定 / 完整。
+- 下一项：D 组剩余 9 条（重试分级、退避上限、熔断半开、指纹去重、流式续传、错误路径禁调 LLM、压缩熔断、切厂保前缀、事件落轨迹）。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

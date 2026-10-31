@@ -41,6 +41,7 @@ ENTRY_MODULES = [
     "aide.core.verifier",
     "aide.core.loop",
     "aide.core.compressor",
+    "aide.core.recovery",
 ]
 
 PROBE = r"""
