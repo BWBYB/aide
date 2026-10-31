@@ -11,11 +11,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import TYPE_CHECKING, Callable, Sequence
 
 from .context import STATE_BAR_OPEN
-from .loop import Limits
 from .message import Msg
+
+if TYPE_CHECKING:  # 打断 loop → compressor → loop 的循环导入
+    from .loop import Limits
 
 COMPRESSED_MARK = "[COMPRESSED]"
 DEFAULT_TOOL_OUTPUT_CHARS = 2000

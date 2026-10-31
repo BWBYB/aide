@@ -235,6 +235,18 @@
 - 计数：`72 passed, 2 skipped`；spec 49 条未变（E 组 5 条本就计入）。
 - 下一项：F 组已随 M0/M1 机制完成；剩 B/C/D/E 之外的最后一块是 `loop` 与 `policy` 的接线（M1 收口）。
 
+### 2026-10-31：M1 接线完成（49 → 52），规则表改为数据驱动
+- 更新位置：`src/aide/core/loop.py`、`policy.py`、`tests/test_loop_integration.py`、`test_policy.py`、`test_recovery.py`
+- **规则表覆盖漏洞（用户指出）**：5 条破坏性规则只测了 4 种命令，`truncate table` 与 `rm -rf *` 从未被测。改为**数据驱动**：`DANGEROUS_RULES` 带编号 `(id, pattern, verdict)`，测试用 `(rule, command, expected)` 参数化，另加 `test_dangerous_rule_table_is_fully_covered` 断言"规则编号集合 == 测试覆盖集合"。新增规则必须同时加一行，否则测试红。
+- **顺带修掉两处不自洽**：① `rm -rf *.log` 原被规则 53 判 `deny`（删日志与删根一个量级），改为只匹配裸 `*`，`*.log` 落到 `need_approval`；② 严重级别原本藏在 `evaluate` 的 `if command.startswith("rm")` 特判里，现在写进规则表，**severity 是数据不是分支**。
+- **AST 守门再扩一层**：`src/aide/core/*.py` → `src/aide/**/*.py`。理由：M2 的工具层在 `src/aide/tools/`，工具失败后调模型正是死亡螺旋的入口，不改的话 M2 一开工守门自动失效。
+- **接线（本节的重点）**：`run_loop` 现在真的调用 `compress()`（压缩在装配之前，状态栏随后追加）与 `evaluate()`（策略在前、执行在后，被拒动作**不会到达执行器**）。新增 `StopReason.CONTEXT_REFUSED`：压缩拒绝即停，符合 `CompressionResult` 的契约。
+- **新增 H 组 3 条装配断言**（49 → **52**）：压缩真的生效（断言第二轮请求含 `[COMPRESSED]` 且 token 变小）、exec 被拦截（**观测点是执行器没被调用**）、完整 ReAct 一轮（轨迹条数与 `stop_reason`）。
+- **循环导入**：`loop → compressor → loop`，用 `TYPE_CHECKING` 打断运行时依赖，`compress()` 对 `limits` 走鸭子类型。
+- 变异验证：关掉 policy 的 DENY 分支 → `routes_exec` 红；还原后 `84 passed, 2 skipped`。
+- 计数：spec **52 条**（A8+B6+C9+D12+E5+F3+G6+**H3**）；出处 39 行号 / 14 自定 / 完整。
+- 下一项：M1 断言已全部落地，可开始逐条自检并进入用户验收。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

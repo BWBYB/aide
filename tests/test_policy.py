@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from aide.core.policy import Action, Verdict, evaluate
+from aide.core.policy import DANGEROUS_RULES, Action, Verdict, evaluate
 
 SANDBOX = "/sandbox"
 READONLY = ("/sandbox/book",)
@@ -65,9 +65,7 @@ def test_policy_blocks_destructive_pattern() -> None:
     denied = evaluate(Action("exec", command="rm -rf /"), sandbox_root=SANDBOX)
     assert denied.verdict is Verdict.DENY, "删根目录不得只要求审批"
 
-    for command in ("rm -rf build/", "git reset --hard", "drop database prod"):
-        decision = evaluate(Action("exec", command=command), sandbox_root=SANDBOX)
-        assert decision.verdict in {Verdict.DENY, Verdict.NEED_APPROVAL}, command
+    # 规则表逐条的正例见下方参数化测试
 
     # 覆盖未读文件：不是禁用，而是要求先读或人工审批
     blind = evaluate(Action("write", path="/sandbox/x.py"), sandbox_root=SANDBOX)
@@ -97,3 +95,34 @@ def test_policy_denies_symlink_escape() -> None:
         resolve=resolve,
     )
     assert normal.verdict is Verdict.ALLOW
+
+
+#: 规则表 → 正例。`rule` 列必须与 policy.DANGEROUS_RULES 的编号一一对应。
+DANGER_CASES = [
+    ("52", "rm -rf /", Verdict.DENY),
+    ("52", "rm -rf ~", Verdict.DENY),
+    ("52", "rm -rf $HOME", Verdict.DENY),
+    ("53", "rm -rf *", Verdict.DENY),
+    ("53", "rm -rf *.log", Verdict.NEED_APPROVAL),
+    ("54", "drop database prod", Verdict.NEED_APPROVAL),
+    ("55", "truncate table users", Verdict.NEED_APPROVAL),
+    ("56", "git reset --hard", Verdict.NEED_APPROVAL),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("rule,command,expected", DANGER_CASES)
+def test_every_dangerous_rule_has_a_positive_case(
+    rule: str, command: str, expected: Verdict
+) -> None:
+    """规则表里每条规则至少一个正例；新增规则必须同时加一行，否则不覆盖。"""
+    decision = evaluate(Action("exec", command=command), sandbox_root=SANDBOX)
+    assert decision.verdict is expected, f"规则 {rule}: {command} -> {decision.verdict}"
+
+
+@pytest.mark.unit
+def test_dangerous_rule_table_is_fully_covered() -> None:
+    """规则表的编号集合必须等于测试覆盖的编号集合。"""
+    table_ids = {rule_id for rule_id, _pattern, _verdict in DANGEROUS_RULES}
+    covered_ids = {rule for rule, _cmd, _expected in DANGER_CASES}
+    assert table_ids == covered_ids, f"未覆盖的规则：{sorted(table_ids - covered_ids)}"

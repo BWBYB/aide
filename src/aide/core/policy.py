@@ -46,14 +46,16 @@ class Decision:
         return self.verdict is Verdict.ALLOW
 
 
-#: 破坏性命令模式（coding-agent-harness:45：删库重建、删光重写要专门检查）
-DESTRUCTIVE_PATTERNS = (
+#: 破坏性命令规则表（coding-agent-harness:45）。
+#: 带编号是为了让「规则数 == 测试覆盖数」可核对——新增一条规则必须同时加一行测试。
+DANGEROUS_RULES: tuple[tuple[str, re.Pattern[str], "Verdict"], ...] = (
     # 注意结尾用 (\s|$) 而不是 \b：`/` 是非单词字符，`\b` 在其后不成立
-    re.compile(r"\brm\s+-[a-z]*r[a-z]*f?\s+(/|~|\$HOME)(\s|$)"),
-    re.compile(r"\brm\s+-[a-z]*r[a-z]*f?\s+\*"),
-    re.compile(r"\bdrop\s+database\b", re.IGNORECASE),
-    re.compile(r"\btruncate\s+table\b", re.IGNORECASE),
-    re.compile(r"\bgit\s+reset\s+--hard\b"),
+    ("52", re.compile(r"\brm\s+-[a-z]*r[a-z]*f?\s+(/|~|\$HOME)(\s|$)"), Verdict.DENY),
+    # 只匹配裸 `*`：`rm -rf *.log` 是删产物，与删光/删根不是一个量级
+    ("53", re.compile(r"\brm\s+-[a-z]*r[a-z]*f?\s+\*(\s|$)"), Verdict.DENY),
+    ("54", re.compile(r"\bdrop\s+database\b", re.IGNORECASE), Verdict.NEED_APPROVAL),
+    ("55", re.compile(r"\btruncate\s+table\b", re.IGNORECASE), Verdict.NEED_APPROVAL),
+    ("56", re.compile(r"\bgit\s+reset\s+--hard\b"), Verdict.NEED_APPROVAL),
 )
 
 
@@ -75,11 +77,9 @@ def evaluate(
     """判定动作。纯函数：同样的输入永远得到同样的结论。"""
     if action.type == "exec":
         command = action.command or ""
-        for pattern in DESTRUCTIVE_PATTERNS:
+        for rule_id, pattern, verdict in DANGEROUS_RULES:
             if pattern.search(command):
-                if command.strip().startswith("rm") and re.search(r"\s(/|~|\$HOME)(\s|$)", command):
-                    return Decision(Verdict.DENY, "删除根目录或家目录：直接拒绝")
-                return Decision(Verdict.NEED_APPROVAL, "破坏性命令：需要人工审批")
+                return Decision(verdict, f"命中破坏性规则 {rule_id}：{command.strip()}")
         return Decision(Verdict.NEED_APPROVAL, "命令执行一概需要审批（最小权限默认）")
 
     if action.type != "write":

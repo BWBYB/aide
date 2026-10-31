@@ -14,8 +14,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Protocol, Sequence
 
+from .compressor import CompressionConfig, compress
 from .context import Prefix, render_request
-from .message import Msg
+from .message import Msg, ToolCall
+from .policy import Action, Verdict, evaluate
 from .state_bar import SystemState, TraceSummary, build_state_bar
 from .verifier import Baseline, Verification, verify
 
@@ -32,6 +34,7 @@ class StopReason(str, Enum):
     TIMEOUT = "timeout"
     COMPLETED = "completed"
     VERIFICATION_UNAVAILABLE = "verification_unavailable"
+    CONTEXT_REFUSED = "context_refused"  # 压缩拒绝：不能带着这个上下文继续
 
 
 @dataclass(frozen=True)
@@ -129,6 +132,42 @@ class LoopResult:
 
 DEFAULT_TOOL_PLACEHOLDER = "[M1 占位：工具执行在 M2 接入，此处只保证轨迹配对完整]"
 
+EXEC_TOOLS = frozenset({"exec", "shell", "bash", "python_exec"})
+
+
+def _action_of(call: ToolCall) -> Action:
+    """把工具调用映射成待判定动作。M2 接真实工具表时只改这里。"""
+    if call.name in EXEC_TOOLS:
+        return Action("exec", command=str(call.arguments.get("command", "")))
+    if call.name.startswith(("write", "edit", "delete")):
+        return Action(
+            "write",
+            path=call.arguments.get("path"),
+            read_first=bool(call.arguments.get("read_first", False)),
+        )
+    return Action("read", path=call.arguments.get("path"))
+
+
+def _run_tool(
+    call: ToolCall,
+    sandbox_root: str | None,
+    readonly_roots: Sequence[str],
+    executor: Callable[[ToolCall], str] | None,
+    placeholder: str,
+) -> str:
+    """策略在前、执行在后：被拒的动作**不会**到达执行器。"""
+    if sandbox_root is not None:
+        decision = evaluate(
+            _action_of(call), sandbox_root=sandbox_root, readonly_roots=readonly_roots
+        )
+        if decision.verdict is Verdict.DENY:
+            return f"[policy] 拒绝：{decision.reason}"
+        if decision.verdict is Verdict.NEED_APPROVAL:
+            return f"[policy] 需要审批：{decision.reason}"
+    if executor is None:
+        return placeholder
+    return executor(call)
+
 
 def run_loop(
     provider: Provider,
@@ -140,6 +179,10 @@ def run_loop(
     verifier_baseline: Baseline | None = None,
     system: SystemState | None = None,
     tool_placeholder: str = DEFAULT_TOOL_PLACEHOLDER,
+    compression: CompressionConfig | None = None,
+    sandbox_root: str | None = None,
+    readonly_roots: Sequence[str] = (),
+    tool_executor: Callable[[ToolCall], str] | None = None,
 ) -> LoopResult:
     """跑一次最小 ReAct 循环。工具执行属 M2，这里只回填占位结果以保持配对完整。"""
     started = clock()
@@ -153,8 +196,19 @@ def run_loop(
         if stop is not None:
             return LoopResult(stop, tuple(trajectory), verification, state.turns, state.tokens_used)
 
+        # 压缩必须在装配之前：它作用在轨迹上，状态栏随后才追加（位置不变量）
+        compressed = compress(trajectory, limits=limits, config=compression or CompressionConfig())
+        if compressed.refused:
+            return LoopResult(
+                Stop(StopReason.CONTEXT_REFUSED, compressed.refusal_reason or "压缩拒绝"),
+                tuple(trajectory),
+                verification,
+                state.turns,
+                state.tokens_used,
+            )
+
         summary = TraceSummary.from_trace(trajectory, system=system)
-        request = render_request(prefix, trajectory, build_state_bar(summary, now))
+        request = render_request(prefix, compressed.messages, build_state_bar(summary, now))
         response = provider.complete(request)
         state.turns += 1
         state.tokens_used += int(getattr(response, "usage", {}).get("total_tokens", 0))
@@ -170,7 +224,7 @@ def run_loop(
         if response.tool_calls:
             for call in response.tool_calls:
                 trajectory.append(
-                    Msg(role="tool", content=tool_placeholder, tool_call_id=call.id)
+                    Msg(role="tool", content=_run_tool(call, sandbox_root, readonly_roots, tool_executor, tool_placeholder), tool_call_id=call.id)
                 )
             continue
 

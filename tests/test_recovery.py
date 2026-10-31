@@ -223,7 +223,7 @@ def test_error_path_never_calls_llm() -> None:
     banned = {"complete", "generate", "chat"}
     # 扫整个 core 目录，不扫单文件：拆分文件时若只扫一个，
     # 新文件里的错误路径就永远不会被检查（本轮 failover.py 正是这样被拆出去的）。
-    for path in sorted(pathlib.Path("src/aide/core").glob("*.py")):
+    for path in sorted(pathlib.Path("src/aide").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.ExceptHandler):
