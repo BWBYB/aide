@@ -97,7 +97,7 @@ CLI_ENV = PYTHONPATH=src:knowledge
 .PHONY: run
 run:
 	@test -n "$(TASK)" || { echo "[error] 用法：make run TASK=\"...\""; exit 2; }
-	@$(CLI_ENV) $(AIDE_PY) -m aide.cli run --task "$(TASK)" --trace "$(or $(TRACE),traces/latest.jsonl)"
+	@$(CLI_ENV) $(AIDE_PY) -m aide.cli run --task "$(TASK)" $(if $(TRACE),--trace "$(TRACE)")
 
 .PHONY: replay
 replay:

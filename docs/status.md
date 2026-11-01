@@ -271,6 +271,17 @@
 - 计数：`92 passed, 2 skipped`；spec **55 条**不变（本轮是轨迹契约补齐，未新增断言，只强化既有三条）；出处覆盖完整。
 - 下一项：等用户勾选 M1a。
 
+### 2026-11-01：Makefile 覆盖默认值（测试路径 ≠ 使用路径），补机器守卫
+- 更新位置：`Makefile`、`src/aide/cli.py`、`tests/test_cli.py`、M1 清单
+- **用户实测发现**：`make run` 每次显式传 `--trace traces/latest.jsonl`，把 CLI 的默认值（时间戳）彻底覆盖——`cli.py` 那段默认逻辑**从未被执行过**。而测试用 `monkeypatch.chdir` 断言"文件名不是 latest"，走的是另一条路径，所以**测试绿、验收命令行为仍错**。
+- **修复**：Makefile 改为 `$(if $(TRACE),--trace "$(TRACE)")`，TRACE 为空则不传；CLI 落盘后维护 `traces/latest.jsonl` **软链指针**（不是拷贝，避免"latest 到底是哪一次"变成两份数据），既保留历史又给 replay 一个稳定入口。
+- **实测**：连跑两次 `make run` 产出两个时间戳文件 + latest 软链；`make replay TRACE=traces/latest.jsonl` 正常读回。
+- **新增机器守卫** `test_make_run_does_not_hardcode_trace_path`：直接读 Makefile 的 run 目标，断言不含 `latest.jsonl` 且使用 `$(if $(TRACE)...`。**变异验证**：把 Makefile 改回写死 → 该测试立红。这样这类"入口分叉"下次在 CI 里就挡住，而不是靠人记得用验收命令跑一遍。
+- **这是第 11 种失效形态**（用户归纳）：测试断言的是函数默认值，用户走的是 Makefile/CLI 传参；两边都"对"，但只有一条被执行过。发现方式——**用验收清单里那条命令本身去跑，而不是用测试去跑**。它与"`make run` 根本不存在"同源：52 条断言全绿 ≠ 清单里那条命令能跑。
+- **清单补一处边界**：`observations` 在 M1a 由替身产生（无真实工具），轨迹结构已就位，真实工具结果待 M2。
+- 计数：`93 passed, 2 skipped`；spec **56 条**（H6 → **H7**）；出处 39 行号 / 18 自定 / 完整。
+- 下一项：M1a 待用户最终勾选。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

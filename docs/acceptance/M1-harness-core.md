@@ -45,18 +45,21 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1a 可执行 55 条**（A8 + B6 + C9 + D12 + E5 + F3 + G6 + H6）。
+按声明的 skill 分组，**M1a 可执行 56 条**（A8 + B6 + C9 + D12 + E5 + F3 + G6 + **H7**）。
 
 > **M1 拆两段验收**（见 `docs/adr/0008`）：
 > - **M1a Harness 内核**：本节 55 条 + `make run` / `make replay` 可跑。**当前到此为止。**
 > - **M1b Provider 接入**：`llm/client.py` + 2 条新断言 + contract 档，独立验收。
 >
-> **M1a 的通过条件**：**54 绿 + 1 有理由 skip**。`test_reasoning_echo_matches_provider_contract`
-> 属 contract 档，需真实厂商 API，在 M1a 阶段必然 skip——**不计入"55 全绿"**，
-> 也不得为了让数字好看而删掉它。
+> **M1a 的通过条件**：**55 绿 + 1 有理由 skip**。`test_reasoning_echo_matches_provider_contract`
+> 属 contract 档，需真实厂商 API，在 M1a 阶段必然 skip——**不计入"56 全绿"**，
+> 也不得为了让数字好看而删掉它。（另有 1 条 `slow` 属 M0 的嵌入自相似度，与本段无关。）
 >
 > **`cost_usd` 在 M1a 恒为 `None`**（未配置价目表）。字段存在是硬要求，值为空是事实，
 > 两者都要写明；M1b 接入价目表后才非空。
+>
+> **`observations` 在 M1a 由替身产生**：没有真实工具，内容是执行器返回的固定字符串。
+> 轨迹结构已就位，真实工具结果待 M2。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之四、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
@@ -172,6 +175,7 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 | `test_run_cli_writes_trace` | `make run` 真的落轨迹，字段齐全（`prefix_sha256` / 状态栏 / tokens / cost），两轮前缀一致 | M1 | **自定** |
 | `test_replay_reads_trace` | `make replay` 能读回并逐项打印——"轨迹可追溯"的唯一验证方式 | M1 | **自定** |
 | `test_max_turns_env_yields_structured_stop` | `AIDE_MAX_TURNS=1` 走出「轮次耗尽」结构化终止，不静默返回空答案 | M1 | **自定** |
+| `test_make_run_does_not_hardcode_trace_path` | Makefile 的 `run` 目标不得写死 `--trace`。防「测试路径 ≠ 使用路径」：CLI 默认值已改成时间戳，但 Makefile 每次显式传参时那段逻辑从未被执行 | M1 | **自定** |
 
 ## 三之二、实现顺序与依赖（施工图）
 

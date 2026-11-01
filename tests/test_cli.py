@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -81,6 +82,28 @@ def test_default_trace_path_is_timestamped(tmp_path, monkeypatch) -> None:
     """默认轨迹名必须唯一：固定 latest.jsonl 会让"跑两次丢一次"。"""
     monkeypatch.chdir(tmp_path)
     assert main(["run", "--task", "写一个脚本"]) == 0
-    files = sorted((tmp_path / "traces").glob("*.jsonl"))
+    files = sorted(p for p in (tmp_path / "traces").glob("*.jsonl") if p.name != "latest.jsonl")
     assert len(files) == 1
     assert files[0].name != "latest.jsonl"
+    # 稳定入口：latest 指向时间戳文件（软链，不是第二份数据）
+    latest = tmp_path / "traces" / "latest.jsonl"
+    assert latest.is_symlink() and latest.resolve() == files[0].resolve()
+
+
+@pytest.mark.unit
+def test_make_run_does_not_hardcode_trace_path() -> None:
+    """Makefile 的 run 目标不得写死 --trace。
+
+    这条防的是"测试路径 ≠ 使用路径"：CLI 默认值已改成时间戳，
+    但 make run 每次都显式传参时，那段默认逻辑从未被执行——
+    测试绿、验收命令行为仍错。
+    """
+    makefile = (Path(__file__).resolve().parents[1] / "Makefile").read_text(encoding="utf-8")
+    recipe = [
+        line for line in makefile.splitlines()
+        if "aide.cli run" in line
+    ]
+    assert recipe, "Makefile 里找不到 run 目标"
+    for line in recipe:
+        assert "latest.jsonl" not in line, f"run 目标写死了轨迹路径：{line}"
+        assert "$(if $(TRACE)" in line, f"run 目标应仅在 TRACE 指定时传 --trace：{line}"

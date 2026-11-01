@@ -94,11 +94,25 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     trace_path = Path(args.trace).resolve()
     recorder.save(trace_path)
+    _update_latest(trace_path)
     print(f"[stop] {result.stop.reason.value}: {result.stop.detail}")
     print(f"[trace] {trace_path}")
     if result.stop.reason is StopReason.TURN_LIMIT:
         print("[note] 轮次耗尽属于结构化终止，不是异常")
     return 0
+
+
+def _update_latest(trace_path: Path) -> None:
+    """维护 traces/latest.jsonl 指针：历史按时间戳保留，回放有稳定入口。
+
+    只做软链不做拷贝——拷贝会让"latest 到底是哪一次"再次变成两份数据。
+    """
+    latest = trace_path.parent / "latest.jsonl"
+    try:
+        latest.unlink(missing_ok=True)
+        latest.symlink_to(trace_path.name)
+    except OSError as error:  # 文件系统不支持软链时降级为拷贝，不中断运行
+        print(f"[warn] 无法创建 latest 指针：{error}", file=sys.stderr)
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
