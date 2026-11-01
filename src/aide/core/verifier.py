@@ -6,6 +6,8 @@
 另一条硬要求（loop-engineering:18）：验证不可靠时，循环转得越快，
 只是把劣质产出更快地标记为完成。所以基线必须能**拒绝**明显不合格的产物，
 而不只是"看起来通过了"。
+
+抽取逻辑已拆到 `code_extract.py`；本模块只做判定。
 """
 
 from __future__ import annotations
@@ -14,17 +16,27 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
+from .code_extract import extract_candidates, extract_code, text_of
+
 #: 失败原因必须可定位：说清哪一项不满足、在哪一行
 Failure = str
 Predicate = Callable[[Any], Failure | None]
+Extractor = Callable[[Any], list[str]]
+
+_text_of = text_of  # 旧内部名，保持兼容
 
 
 @dataclass(frozen=True)
 class Baseline:
-    """一组验收谓词。谓词返回 None 表示通过，返回字符串表示失败原因。"""
+    """一组验收谓词 + 可选的候选抽取器。
+
+    谓词返回 None 表示通过，返回字符串表示失败原因。
+    `extractor` 非空时，`verify()` 会逐个候选试，**同一候选必须过完所有谓词**。
+    """
 
     name: str
     predicates: tuple[Predicate, ...]
+    extractor: Extractor | None = None
 
     def check(self, artifact: Any) -> tuple[bool, tuple[Failure, ...]]:
         failures: list[Failure] = []
@@ -43,13 +55,6 @@ class Verification:
 
     def reason(self) -> str:
         return "通过" if self.ok else "；".join(self.failures)
-
-
-def _text_of(artifact: Any) -> str:
-    if isinstance(artifact, str):
-        return artifact
-    text = getattr(artifact, "text", None)
-    return text if isinstance(text, str) else ""
 
 
 def non_empty(artifact: Any) -> Failure | None:
@@ -71,7 +76,15 @@ def parses_as_python(artifact: Any) -> Failure | None:
 
 
 def has_executable_statement(artifact: Any) -> Failure | None:
-    """挡掉"只改注释/只写文档字符串"这类假修复。"""
+    """产物里必须真的"做了点什么"。
+
+    判据（写死，不要放宽）：
+    - 非 `Expr` 的语句节点算数：FunctionDef / Assign / Import / If / Try / Raise / Pass 等；
+    - `Expr` 只有在 value 是 `Call` 时算数（`print(1)` 有副作用）；
+    - **其余裸表达式一律不算**：`Expr(Name)`、`Expr(Constant)`、`Expr(BinOp)`、`Expr(List)`。
+      所以 `"好"`、`"x"`、`"1 + 1"`、`"[1, 2]"` 都不通过——
+      模型回一句「好的」不得被判成完成。
+    """
     text = _text_of(artifact)
     if not text.strip():
         return None
@@ -79,31 +92,43 @@ def has_executable_statement(artifact: Any) -> Failure | None:
         tree = ast.parse(text)
     except SyntaxError:
         return None  # 语法错误已由上一个谓词报出
-    meaningful = [
-        node
-        for node in tree.body
-        if not (
-            isinstance(node, ast.Expr)
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-        )
-    ]
-    if not meaningful:
-        return "只有注释或字符串字面量，没有任何可执行语句（看起来是空改动）"
-    return None
+
+    for node in tree.body:
+        if not isinstance(node, ast.Expr):
+            return None
+        if isinstance(node.value, ast.Call):
+            return None
+    return "没有可执行语句：注释与裸表达式（标识符/常量/运算）都不算产出，至少要有语句或函数调用"
 
 
-#: Python 文件的最小验收基线：非空 + 可解析 + 有实际语句
+#: Python 文件的最小验收基线：候选序列 → 非空 + 可解析 + 有实际语句
 PYTHON_FILE_BASELINE = Baseline(
     name="python-file",
     predicates=(non_empty, parses_as_python, has_executable_statement),
+    extractor=extract_candidates,
 )
 
 
 def verify(artifact: Any, baseline: Baseline) -> Verification:
-    """按基线判定产物。纯函数：不读文件系统、不调模型。"""
-    ok, failures = baseline.check(artifact)
-    return Verification(ok=ok, baseline=baseline.name, failures=failures)
+    """按基线判定产物。纯函数：不读文件系统、不调模型。
+
+    **候选之间不合并**：一个候选必须自己过完所有谓词。曾允许跨候选合并，
+    导致「裸标识符围栏 + 语法错误围栏」被判通过——`parses` 命中一块、
+    可执行语句谓词在另一块上因 SyntaxError 返回 None（免检），拼起来就"全过"。
+
+    全不通过时，用**失败谓词最少**的候选报错（并列取靠前），
+    这样报错指向最有希望的那份，且行号仍是原文行号（抽取时用空行占位）。
+    """
+    candidates = baseline.extractor(artifact) if baseline.extractor else [artifact]
+    best: tuple[tuple[Failure, ...], str] | None = None
+    for candidate in candidates:
+        ok, failures = baseline.check(candidate)
+        if ok:
+            return Verification(ok=True, baseline=baseline.name, failures=())
+        if best is None or len(failures) < len(best[0]):
+            best = (failures, candidate)
+    assert best is not None  # extractor 至少返回一个候选（含原文）
+    return Verification(ok=False, baseline=baseline.name, failures=best[0])
 
 
 def verify_all(artifact: Any, baselines: Sequence[Baseline]) -> Verification:
@@ -111,7 +136,7 @@ def verify_all(artifact: Any, baselines: Sequence[Baseline]) -> Verification:
 
     **空基线不得默认通过**：没有验收标准时，"通过"这个结论没有依据。
     这是"空实现能过"的变体——循环体不执行 → failures 为空 → ok=True，
-    与 `verify(x, None)` 走 VERIFICATION_UNAVAILABLE 的语义相反。
+    与 `verify(x, None)` 走 `VERIFICATION_UNAVAILABLE` 的语义相反。
     """
     if not baselines:
         return Verification(

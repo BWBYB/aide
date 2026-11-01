@@ -45,6 +45,7 @@ ENTRY_MODULES = [
     "aide.core.failover",
     "aide.core.policy",
     "aide.core.limits",
+    "aide.core.code_extract",
     "aide.cli",
     "aide.runtime.trace",
     "aide.runtime.fakes",

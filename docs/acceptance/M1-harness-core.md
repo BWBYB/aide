@@ -45,7 +45,7 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1a 可执行 56 条**（A8 + B6 + C9 + D12 + E5 + F3 + G6 + **H7**）。
+按声明的 skill 分组，**M1a 可执行 73 条**（A8 + B6 + C9 + D12 + E5 + F3 + **G23** + H7）。
 
 > **M1 拆两段验收**（见 `docs/adr/0008`）：
 > - **M1a Harness 内核**：本节 55 条 + `make run` / `make replay` 可跑。**当前到此为止。**
@@ -153,6 +153,23 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 | `test_timeout_limit_terminates` | 墙钟超时生效，已完成步骤轨迹不丢。**仅覆盖"多次慢调用累积超预算"**；单次调用永久挂起由 D 组 `test_stream_idle_watchdog_kills_stalled_stream` 负责，`max_seconds` 对此无效 | M1 | **自定** |
 | `test_completion_claim_requires_verifier` | 模型自称完成不得直接终止；须经 verifier 判定 | M1 | loop-engineering:17,19 |
 | `test_verifier_rejects_obviously_bad_output` | `verify(artifact, baseline)`；空文件/语法错误/只改注释 → False 且给出可定位原因 | M1 | loop-engineering:18 |
+| `test_baseline_rejects_bare_identifier` | `verify("好")` / `verify("x")` / `verify("完成")` 必须为 False 且原因非空——模型回一句「好的」不得被判完成 | M1 | **自定**（loop-engineering:18 的收紧） |
+| `test_baseline_rejects_bare_expression` | `verify("1 + 1")` / `verify("[1, 2]")` / `verify("'abc'")` 必须为 False——裸表达式没有副作用 | M1 | **自定**（同上） |
+| `test_baseline_accepts_call_and_statements` | **配对断言**：`print(1)` / `x = 1` / `def f(): pass` 必须为 True。只收紧不测这一侧，等于把基线改成永远拒绝 | M1 | **自定**（同上） |
+| `test_baseline_accepts_fenced_code_block` | ```python\nprint(1)\n``` 与 ```\nx = 1\n``` 必须为 True——真实模型用围栏包裹代码 | M1 | **自定**（工程判断） |
+| `test_baseline_accepts_code_with_surrounding_prose` | 前置说明 / 尾随说明 / 围栏夹在散文中，三种都必须为 True——"尺子要能量真实输出" | M1 | **自定**（工程判断） |
+| `test_extraction_does_not_weaken_baseline` | 抽取只负责找代码，不负责判通过：```\n好\n``` / ```\n1 + 1\n``` / 好的\n1 + 1 / ```\n# 只有注释\n``` 必须仍为 False 且原因非空 | M1 | **自定**（工程判断） |
+| `test_baseline_accepts_python_fence_after_other_block` | 多围栏（前面是 diff / 说明块）时，后面的代码块仍被找到 | M1 | **自定** |
+| `test_baseline_accepts_indented_fence` | 整段围栏被缩进时先 dedent 再解析 | M1 | **自定** |
+| `test_baseline_accepts_prose_on_both_sides` | 双侧散文：先剥头、在剥头的结果上再剥尾 | M1 | **自定** |
+| `test_baseline_rejects_when_no_candidate_has_code` | **核心钩子**：多候选 + 任一谓词满足 ≠ 有代码就能过；```\n说明\n``` / ```\n好\n``` / 好的\n1 + 1 必须仍为 False 且原因非空 | M1 | **自定** |
+| `test_baseline_rejects_broken_code_between_valid_lines` | 语法错误的代码行不可剥：`import os\ndef f(:` / `def f(:\nprint(1)` / `x = 1\ndef f(:\ny = 2` 全为 False 且行号分别为 2/1/2 | M1 | **自定** |
+| `test_syntax_error_reports_original_line_number` | 剥头用等量空行占位，围栏内容同样按原文偏移：`好的\nprint(1\n` 与 \`\`\`python\nprint(1 都必须报「第 2 行」 | M1 | **自定** |
+| `test_prose_peeling_stops_at_code_line` | 遇第一个非散文行即停，不跳过：`好的\nx = 1\ndef f(:` 为 False，`好的\nprint(1)` 为 True | M1 | **自定** |
+| `test_full_width_punctuation_is_peelable` | 禁止符号表只放 ASCII；全角「：，（）」不得挡住剥离，否则中文场景全误拒 | M1 | **自定** |
+| `test_cross_candidate_combination_is_not_pass` | **同一候选必须自己过完三个谓词**：`\`\`\`\n好\n\`\`\` + \`\`\`\ndef f(:\n\`\`\`` 这类跨候选拼凑不得通过（`parses` 命中一块、语句谓词在另一块上因 SyntaxError 免检） | M1 | **自定** |
+| `test_failure_message_points_at_best_candidate` | 全不过时报错指向「失败谓词最少」的候选，不是围栏符号那行的语法错误 | M1 | **自定** |
+| `test_extract_module_importable_from_verifier` | 拆出 `code_extract.py` 后，旧路径 `aide.core.verifier.extract_candidates/extract_code` 仍可导入并使用 | M1 | **自定** |
 | `test_verify_all_without_baselines_is_not_pass` | 多基线合并时**空基线不得默认通过**（循环体不执行 → failures 为空 → 原本会 ok=True，与单基线走 `VERIFICATION_UNAVAILABLE` 的语义相反） | M1 | **自定**（"空实现能过"变体） |
 
 > 后两条必须成对：前者只证明「verifier 在环内」，一个永远返回 True 的空实现同样能过；
