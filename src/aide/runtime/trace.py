@@ -35,18 +35,25 @@ class TraceEntry:
     observations: list[dict[str, Any]] = field(default_factory=list)
     #: 产生这条轨迹的模型名。没有它，将来配了价目表也没法按模型归组算成本
     model: str = ""
+    #: 成本是按哪一版价目算的。换价后历史轨迹才不会被静默重算（ADR 0010）
+    price_version: str | None = None
 
 
 class TraceRecorder:
     """包装任意 provider，记录每次请求/响应。对调用方完全透明。"""
 
     def __init__(
-        self, provider: Any, price: "PriceTable | None" = None, model: str = "unknown"
+        self,
+        provider: Any,
+        price: "PriceTable | None" = None,
+        model: str = "unknown",
+        price_version: str | None = None,
     ) -> None:
         self._provider = provider
         self._entries: list[TraceEntry] = []
         self._price = price
         self._model = model
+        self._price_version = price_version
 
     def complete(self, request: dict[str, Any]) -> Any:
         response = self._provider.complete(request)
@@ -71,6 +78,7 @@ class TraceRecorder:
                 usage=usage,
                 cost_usd=self._price(usage) if self._price else None,
                 model=self._model,
+                price_version=self._price_version,
             )
         )
         return response

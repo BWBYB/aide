@@ -28,7 +28,7 @@ def test_run_cli_writes_trace(tmp_dir, monkeypatch, capsys) -> None:
     first = entries[0]
     for key in (
         "turn", "prefix_sha256", "state_bar", "tool_calls",
-        "observations", "usage", "cost_usd", "model",
+        "observations", "usage", "cost_usd", "model", "price_version",
     ):
         assert key in first, f"轨迹缺少字段：{key}"
     assert first["state_bar"].startswith("<agent_status>"), "状态栏没有进轨迹"

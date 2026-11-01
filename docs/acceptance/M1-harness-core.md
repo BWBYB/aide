@@ -316,3 +316,13 @@ M1 用**可注入**的 `count_tokens: Callable[[str], int]`，默认实现 **CJK
 - 危险动作仅靠提示词约束，`policy` 里没有对应 deny / need_approval 分支。
 - 新增 `src/` 模块未登记进 `ENTRY_MODULES`。
 - 断言表里有条目既无 `skill:行号` 也未标**自定**（等于隐藏了先验填空）。
+## 附录：M1b 附加断言（不计入 M1a 的 56 条）
+
+| 断言 | 断言什么 | 依据 |
+|---|---|---|
+| `test_client_has_no_retry_loop` | `src/aide/llm/*.py` 里不得出现重试循环或 `sleep`——重试/退避/熔断归 `recovery.py` | ADR 0009 |
+| `test_provider_parses_usage_into_trace` | 真实 usage 解析进轨迹，且 `model` 与 `price_version` 同时落盘 | ADR 0010 |
+| `test_provider_classifies_4xx_as_non_retryable` | 4xx 翻译成 `retryable=False` 的结构化异常；429/5xx 为 `True` | ADR 0009 |
+
+**M1b 的完成条件之一**：`test_reasoning_echo_matches_provider_contract` 必须从 skip 变成真跑一次。
+若结束时它仍 skip，M1b 与 M1a 的区别就只剩「多了 150 行」，而不是「验证了真 provider 行为」。
