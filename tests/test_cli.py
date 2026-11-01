@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -17,9 +18,9 @@ from aide.runtime.trace import load_trace
 
 
 @pytest.mark.unit
-def test_run_cli_writes_trace(tmp_path, monkeypatch, capsys) -> None:
+def test_run_cli_writes_trace(tmp_dir, monkeypatch, capsys) -> None:
     """run 必须落轨迹，且字段齐全（prefix_sha256 / 状态栏 / tokens / cost）。"""
-    trace = tmp_path / "trace.jsonl"
+    trace = tmp_dir / "trace.jsonl"
     assert main(["run", "--task", "写一个脚本", "--trace", str(trace)]) == 0
 
     entries = load_trace(trace)
@@ -46,9 +47,9 @@ def test_run_cli_writes_trace(tmp_path, monkeypatch, capsys) -> None:
 
 
 @pytest.mark.unit
-def test_replay_reads_trace(tmp_path, capsys) -> None:
+def test_replay_reads_trace(tmp_dir, capsys) -> None:
     """replay 必须能读回轨迹并逐项打印——这是"轨迹可追溯"的唯一验证方式。"""
-    trace = tmp_path / "trace.jsonl"
+    trace = tmp_dir / "trace.jsonl"
     main(["run", "--task", "写一个脚本", "--trace", str(trace)])
     capsys.readouterr()
 
@@ -66,10 +67,10 @@ def test_replay_reads_trace(tmp_path, capsys) -> None:
 
 
 @pytest.mark.unit
-def test_max_turns_env_yields_structured_stop(tmp_path, monkeypatch, capsys) -> None:
+def test_max_turns_env_yields_structured_stop(tmp_dir, monkeypatch, capsys) -> None:
     """AIDE_MAX_TURNS=1 必须走出「轮次耗尽」，而不是静默返回空答案。"""
     monkeypatch.setenv("AIDE_MAX_TURNS", "1")
-    trace = tmp_path / "one.jsonl"
+    trace = tmp_dir / "one.jsonl"
     assert main(["run", "--task", "写一个脚本", "--trace", str(trace)]) == 0
 
     out = capsys.readouterr().out
@@ -78,16 +79,22 @@ def test_max_turns_env_yields_structured_stop(tmp_path, monkeypatch, capsys) -> 
 
 
 @pytest.mark.unit
-def test_default_trace_path_is_timestamped(tmp_path, monkeypatch) -> None:
-    """默认轨迹名必须唯一：固定 latest.jsonl 会让"跑两次丢一次"。"""
-    monkeypatch.chdir(tmp_path)
-    assert main(["run", "--task", "写一个脚本"]) == 0
-    files = sorted(p for p in (tmp_path / "traces").glob("*.jsonl") if p.name != "latest.jsonl")
-    assert len(files) == 1
-    assert files[0].name != "latest.jsonl"
-    # 稳定入口：latest 指向时间戳文件（软链，不是第二份数据）
-    latest = tmp_path / "traces" / "latest.jsonl"
-    assert latest.is_symlink() and latest.resolve() == files[0].resolve()
+def test_default_trace_path_is_timestamped(monkeypatch) -> None:
+    """默认轨迹名必须唯一：固定 latest.jsonl 会让"跑两次丢一次"。
+
+    这里不用 `tmp_dir` fixture：某些沙箱环境会拦截 pytest 的临时目录工厂，
+    改用标准库 `tempfile` 可以让这条用例在任何环境跑起来。
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        monkeypatch.chdir(tmp_dir)
+        assert main(["run", "--task", "写一个脚本"]) == 0
+        files = sorted(p for p in (tmp_dir / "traces").glob("*.jsonl") if p.name != "latest.jsonl")
+        assert len(files) == 1
+        assert files[0].name != "latest.jsonl"
+        # 稳定入口：latest 指向时间戳文件（软链，不是第二份数据）
+        latest = tmp_dir / "traces" / "latest.jsonl"
+        assert latest.is_symlink() and latest.resolve() == files[0].resolve()
 
 
 @pytest.mark.unit

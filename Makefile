@@ -101,8 +101,7 @@ run:
 
 .PHONY: replay
 replay:
-	@test -n "$(TRACE)" || { echo "[error] 用法：make replay TRACE=traces/xxx.jsonl"; exit 2; }
-	@$(CLI_ENV) $(AIDE_PY) -m aide.cli replay --trace "$(TRACE)"
+	@$(CLI_ENV) $(AIDE_PY) -m aide.cli replay --trace "$(or $(TRACE),traces/latest.jsonl)"
 
 .PHONY: test
 test:
