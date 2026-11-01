@@ -1,8 +1,10 @@
-.env
-.env.local
+# 编辑器的原子保存会留下 .envXXXXXX 这类临时文件，只写 .env 挡不住
+.env*
+!.env.example
 .venv/
 __pycache__/
 *.pyc
+.DS_Store
 .pytest_cache/
 .ruff_cache/
 dist/
