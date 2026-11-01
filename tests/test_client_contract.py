@@ -1,7 +1,8 @@
-"""M1b 守卫：provider 客户端不得自带重试。
+"""M1b 守卫与断言：client 只有一个请求点、错误分类正确、usage 进轨迹。
 
-职责边界见 ADR 0009。`src/aide/llm/` 尚未实现时本条 skip 并写明原因——
-**不允许**在没有 client 的情况下默默通过：那条路会变成"守门从未生效"。
+职责边界见 ADR 0009。守卫按"请求调用点数量"判定而不是黑名单——
+黑名单永远不完备（`for _ in range(3)`、`itertools.repeat`、递归都能绕过），
+而"重试"本质上就是"同一请求发多次"，数量才是判据。
 """
 
 from __future__ import annotations
@@ -11,32 +12,77 @@ import pathlib
 
 import pytest
 
+from aide.llm.client import Client, translate_error
+from aide.runtime.pricing import load_prices
+from aide.runtime.trace import TraceRecorder
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 LLM_DIR = REPO_ROOT / "src" / "aide" / "llm"
-#: 用"有没有 .py 文件"判定，而不是"目录在不在"——
-#: 空目录会让守门扫到 0 个文件然后显示绿，这正是"守门从未生效"的形态
-CLIENT_FILES = sorted(LLM_DIR.rglob("*.py")) if LLM_DIR.is_dir() else []
+CLIENT_FILES = sorted(p for p in LLM_DIR.rglob("*.py") if p.name != "__init__.py") if LLM_DIR.is_dir() else []
+
+REQUEST_CALLS = {"create", "post", "request", "complete", "chat", "send"}
 
 pytestmark = pytest.mark.skipif(
     not CLIENT_FILES,
-    reason="src/aide/llm 下没有 .py（M1b 未开工）；实现后本守卫自动生效",
+    reason="src/aide/llm 下没有实现文件（M1b 未开工）；实现后本守卫自动生效",
 )
-
-RETRY_HINTS = {"attempt", "retry", "retries", "backoff"}
 
 
 @pytest.mark.unit
-def test_client_has_no_retry_loop() -> None:
-    """client 里出现重试循环即红：重试归 recovery.py（ADR 0009）。"""
-    offenders: list[str] = []
+def test_client_has_single_request_call_site() -> None:
+    """client 里发起请求的调用点必须恰好 1 个；第二个就说明它自己实现了重试。"""
+    assert CLIENT_FILES, "扫到 0 个文件：路径可能写错，守卫未生效"
     for path in CLIENT_FILES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.For, ast.While)):
-                source = ast.dump(node)
-                if any(hint in source.lower() for hint in RETRY_HINTS):
-                    offenders.append(f"{path.name}: 重试循环")
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                if node.func.id == "sleep":
-                    offenders.append(f"{path.name}: 客户端里 sleep（退避属 recovery）")
-    assert not offenders, "客户端越界实现重试：" + "；".join(offenders)
+        hits = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", None) in REQUEST_CALLS
+        ]
+        assert len(hits) == 1, f"{path.name} 有 {len(hits)} 个请求调用点，重试/退避应属 recovery.py"
+
+
+@pytest.mark.unit
+def test_provider_classifies_4xx_as_non_retryable() -> None:
+    """4xx 不可重试；429/5xx 可重试。"""
+    assert translate_error(400, "bad request").retryable is False
+    assert translate_error(403, "forbidden").retryable is False
+    assert translate_error(429, "slow down").retryable is True
+    assert translate_error(503, "unavailable").retryable is True
+    assert translate_error(400).status_code == 400
+
+
+@pytest.mark.unit
+def test_provider_parses_usage_into_trace() -> None:
+    """真实响应的 usage 被解析，并随 model / price_version 落进轨迹。"""
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "好的",
+                    "tool_calls": [
+                        {"id": "c1", "function": {"name": "read_file", "arguments": '{"path": "a.md"}'}}
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+    completion = Client._parse(payload)
+    assert completion.usage["total_tokens"] == 15
+    assert completion.tool_calls[0].arguments == {"path": "a.md"}, "工具参数未从 JSON 解析"
+
+    book = load_prices(REPO_ROOT / "configs" / "prices.json")
+    recorder = TraceRecorder(
+        type("P", (), {"complete": lambda self, req: completion})(),
+        price=lambda usage: book.cost("deepseek-v4", usage),
+        model="deepseek-v4",
+        price_version=book.version,
+    )
+    recorder.complete({"messages": [{"role": "user", "content": "hi"}], "tools": []})
+
+    entry = recorder.entries[0]
+    assert entry.usage["total_tokens"] == 15
+    assert entry.model == "deepseek-v4"
+    assert entry.price_version == book.version
+    assert entry.cost_usd is not None and entry.cost_usd > 0

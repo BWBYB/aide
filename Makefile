@@ -88,6 +88,7 @@ check-provenance:
 	@echo "断言行数：$$(wc -l < /tmp/spec-rows.txt | tr -d ' ')"
 	@echo "有行号：$$(grep -cE '[A-Za-z0-9._-]+:[0-9]' /tmp/spec-rows.txt | tr -d ' ')"
 	@echo "标自定：$$(grep -c '自定' /tmp/spec-rows.txt | tr -d ' ')"
+	@test -s /tmp/spec-rows.txt || { echo "[error] 自动检查节扫到 0 行：标题或区间被改坏，出处覆盖未生效"; exit 1; }
 	@grep -vE '[A-Za-z0-9._-]+:[0-9]|自定' /tmp/spec-rows.txt > /tmp/spec-bad.txt || true
 	@test ! -s /tmp/spec-bad.txt || { echo "[error] 以下断言既无行号也未标自定："; cat /tmp/spec-bad.txt; exit 1; }
 	@echo "出处覆盖：完整"
@@ -142,5 +143,6 @@ check-spec-diff:
 	@grep -oE "test_[a-z0-9_]+" $(SPEC) | sort -u > /tmp/spec-new.txt
 	@echo "旧有今无（疑似丢失）："; comm -23 /tmp/spec-old.txt /tmp/spec-new.txt
 	@echo "今有旧无（新增或改名）："; comm -13 /tmp/spec-old.txt /tmp/spec-new.txt
+	@test -s /tmp/spec-new.txt || { echo "[error] 自动检查节扫到 0 条断言：标题或区间被改坏"; exit 1; }
 	@echo "断言条数（仅自动检查节内表格行）：$$(awk '/^## 三、自动检查/,/^## 三之二/' $(SPEC) | grep -cE '^\| `test_' | tr -d ' ')"
 	@echo "全文去重条数（含正文引用，仅供比对）：$$(wc -l < /tmp/spec-new.txt | tr -d ' ')"

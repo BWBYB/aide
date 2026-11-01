@@ -48,6 +48,8 @@ ENTRY_MODULES = [
     "aide.cli",
     "aide.runtime.trace",
     "aide.runtime.fakes",
+    "aide.runtime.pricing",
+    "aide.llm.client",
 ]
 
 PROBE = r"""
@@ -101,6 +103,7 @@ def test_all_entry_modules_registered() -> None:
             discovered.add(".".join(relative.parts))
     discovered |= {"ingest_v2", "eval_v2"}
 
+    assert discovered, "扫到 0 个模块：src/ 路径可能写错，登记守卫未生效"
     missing = discovered - set(ENTRY_MODULES)
     assert not missing, (
         f"未登记入口模块：{sorted(missing)}\n"

@@ -124,5 +124,6 @@ def test_every_dangerous_rule_has_a_positive_case(
 def test_dangerous_rule_table_is_fully_covered() -> None:
     """规则表的编号集合必须等于测试覆盖的编号集合。"""
     table_ids = {rule_id for rule_id, _pattern, _verdict in DANGEROUS_RULES}
+    assert table_ids, "规则表为空：覆盖断言在空集上恒真"
     covered_ids = {rule for rule, _cmd, _expected in DANGER_CASES}
     assert table_ids == covered_ids, f"未覆盖的规则：{sorted(table_ids - covered_ids)}"

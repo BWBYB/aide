@@ -295,6 +295,16 @@
 - 复盘：M1 从 7 条断言长到 56 条，被推翻的结论 11 类。真正让项目站得住的不是断言数量，而是**每次被指出问题后先修检测能力、再修具体问题**——`check-spec-diff`、`check-provenance`、Makefile 守卫、skill 加载日志，四个守卫都是这么长出来的。
 - 下一项：M1b 开工前先过手册第 10 节的 6 条未决项。
 
+### 2026-11-01：空集合守卫（第 13 类）全线加固；M1b 前两步落地
+- 更新位置：`Makefile`、`tests/test_recovery.py`、`test_policy.py`、`test_offline_order.py`、`test_client_contract.py`、`src/aide/llm/client.py`、`runtime/pricing.py`、`configs/prices.json`、ADR 0009/0010
+- **P1 空集合守卫是一类漏洞（用户指出）**：`all()` 对空集恒真、`for` 对空集不执行——全称断言在空集上永远成立。四个守卫同时加固：`check-provenance`（扫到 0 行即报错）、`check-spec-diff`（空集合即报错）、`test_error_path_never_calls_llm`（0 个 .py 即报错）、`test_dangerous_rule_table_is_fully_covered`（空表即报错）、`test_all_entry_modules_registered`（0 个模块即报错）。**只修"这一个守卫"是治标，修"这一类"才是治本。**
+- **P2 client 守卫改判据**：从黑名单（`for attempt in range` / `sleep`）改为**请求调用点数**——重试的本质是"同一请求发多次"，数量才是判据。变异验证：加第二个 `client.post` → 立红。
+- **M1b 前两步落地**：`configs/prices.json`（带 `version`）+ `runtime/pricing.py`（算不出就返回 `None`，绝不猜）；`llm/client.py`（**唯一请求点** + `translate_error` 纯函数 + usage 解析）。
+- **skip 数从 3 变 2**：client 守卫从 skipped 变为 passed，实测 `98 passed, 2 skipped`（剩 contract 与 slow）。清单已写明：M1b 验收必须逐个数清 skip 的含义，`client 守卫 skip` 意味着"它拦不住任何东西"。
+- **契约厂商选择**（用户建议）：选要求原样回传 `reasoning_content`、不回传即 400 的那家——宽松厂商会让 contract 断言通过得毫无信息量。
+- 计数：spec M1a 仍 56 条；`98 passed, 2 skipped`；出处覆盖完整。
+- 下一项：等 key 后接真模型，跑 contract。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

@@ -1,0 +1,8 @@
+{
+  "version": "2026-11-01-placeholder",
+  "note": "单价为占位值，正式接入前必须按厂商官网修正并升版本号；版本号会写进每条轨迹",
+  "models": {
+    "deepseek-v4": { "in_per_1k": 0.0005, "out_per_1k": 0.002 },
+    "kimi-k2": { "in_per_1k": 0.0006, "out_per_1k": 0.0025 }
+  }
+}

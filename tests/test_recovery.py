@@ -221,9 +221,11 @@ def test_error_path_never_calls_llm() -> None:
     第二层留到 M5：用轨迹里 stop_reason 与 token 消耗的对应关系反推。
     """
     banned = {"complete", "generate", "chat"}
+    files = sorted(pathlib.Path("src/aide").rglob("*.py"))
+    assert files, "扫到 0 个 .py：路径可能写错，守门未生效"
     # 扫整个 core 目录，不扫单文件：拆分文件时若只扫一个，
     # 新文件里的错误路径就永远不会被检查（本轮 failover.py 正是这样被拆出去的）。
-    for path in sorted(pathlib.Path("src/aide").rglob("*.py")):
+    for path in files:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.ExceptHandler):

@@ -320,9 +320,16 @@ M1 用**可注入**的 `count_tokens: Callable[[str], int]`，默认实现 **CJK
 
 | 断言 | 断言什么 | 依据 |
 |---|---|---|
-| `test_client_has_no_retry_loop` | `src/aide/llm/*.py` 里不得出现重试循环或 `sleep`——重试/退避/熔断归 `recovery.py` | ADR 0009 |
+| `test_client_has_single_request_call_site` | `src/aide/llm/*.py` 里发起请求的调用点**恰好 1 个**——重试的本质就是同一请求发多次，数量才是判据；黑名单（`for attempt in range` / `sleep`）永远不完备 | ADR 0009 |
 | `test_provider_parses_usage_into_trace` | 真实 usage 解析进轨迹，且 `model` 与 `price_version` 同时落盘 | ADR 0010 |
 | `test_provider_classifies_4xx_as_non_retryable` | 4xx 翻译成 `retryable=False` 的结构化异常；429/5xx 为 `True` | ADR 0009 |
 
-**M1b 的完成条件之一**：`test_reasoning_echo_matches_provider_contract` 必须从 skip 变成真跑一次。
-若结束时它仍 skip，M1b 与 M1a 的区别就只剩「多了 150 行」，而不是「验证了真 provider 行为」。
+**M1b 的两条完成条件**（缺一不可）：
+
+1. `test_reasoning_echo_matches_provider_contract` 必须从 skip 变成真跑一次。
+   若结束时它仍 skip，M1b 与 M1a 的区别就只剩「多了 150 行」。
+2. `test_client_has_single_request_call_site` 必须从 **skip 变成 passed**。
+   同样是 skip，含义完全不同：contract 是"没 key"、slow 是"要模型"，
+   而 client 守卫 skip 意味着"守卫没找到 client.py，它拦不住任何东西"。
+
+验收时必须逐个数清 `make test` 里的 skip 分别是什么，不能只看总数。
