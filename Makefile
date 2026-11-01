@@ -92,6 +92,18 @@ check-provenance:
 	@test ! -s /tmp/spec-bad.txt || { echo "[error] 以下断言既无行号也未标自定："; cat /tmp/spec-bad.txt; exit 1; }
 	@echo "出处覆盖：完整"
 
+# 入口：M1a 用替身跑通，M1b 才换真实 provider（见 ADR 0008）
+CLI_ENV = PYTHONPATH=src:knowledge
+.PHONY: run
+run:
+	@test -n "$(TASK)" || { echo "[error] 用法：make run TASK=\"...\""; exit 2; }
+	@$(CLI_ENV) $(AIDE_PY) -m aide.cli run --task "$(TASK)" --trace "$(or $(TRACE),traces/latest.jsonl)"
+
+.PHONY: replay
+replay:
+	@test -n "$(TRACE)" || { echo "[error] 用法：make replay TRACE=traces/xxx.jsonl"; exit 2; }
+	@$(CLI_ENV) $(AIDE_PY) -m aide.cli replay --trace "$(TRACE)"
+
 .PHONY: test
 test:
 	$(AIDE_PY) -m pytest

@@ -1,11 +1,7 @@
 """故障分类与活性监控（D 组，error-recovery:19-28）。
 
-设计取舍：**看门狗做成纯判定 + 可注入中止回调**，不引入线程。
-
-理由：`test_stream_idle_watchdog_kills_stalled_stream` 要的是「连接建立但不再吐数据」
-——它在时间轴上表现为「永不返回」。若用线程模拟，测试要么不可靠（sleep 竞态），
-要么逼替身支持"永久阻塞"。改成判定函数后，逻辑可纯函数测（毫秒级、确定），
-真正的打断动作通过 `abort` 回调断言，不需要线程。
+看门狗做成纯判定 + 可注入中止回调，不引入线程：判定可毫秒级精确测试，
+打断动作通过 abort 回调断言。用线程模拟"永不返回"要么依赖 sleep 竞态，要么逼替身支持永久阻塞。
 """
 
 from __future__ import annotations
@@ -145,6 +141,22 @@ class StreamWatchdog:
     @property
     def killed(self) -> bool:
         return self._killed
+
+
+@dataclass(frozen=True)
+class FailureBreaker:
+    """连续失败计数。阈值 3 来自 error-recovery:42 的生产统计。"""
+
+    max_consecutive: int = 3
+    failures: int = 0
+    opened: bool = False
+
+    def record_failure(self) -> "FailureBreaker":
+        failures = self.failures + 1
+        return FailureBreaker(self.max_consecutive, failures, failures >= self.max_consecutive)
+
+    def record_success(self) -> "FailureBreaker":
+        return FailureBreaker(self.max_consecutive, 0, False)
 
 
 @dataclass(frozen=True)

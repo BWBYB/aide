@@ -247,6 +247,21 @@
 - 计数：spec **52 条**（A8+B6+C9+D12+E5+F3+G6+**H3**）；出处 39 行号 / 14 自定 / 完整。
 - 下一项：M1 断言已全部落地，可开始逐条自检并进入用户验收。
 
+### 2026-11-01：M1a 入口跑通（`make run` / `make replay`），M1 拆两段
+- 更新位置：`src/aide/cli.py`、`runtime/trace.py`、`runtime/fakes.py`、`core/limits.py`、`Makefile`、`docs/adr/0008`、M1 清单
+- **P0 清单里的命令根本不存在（用户指出）**：`make run` / `make replay` 两个目标从未定义——不是"缺 provider"，是 `No rule to make target`。三条命令从写下那天起没被执行过一次，等于三条没有验收的验收项。
+- **顺序反过来做**：先用替身把入口跑通，再接 provider。现在实测：
+  `make run TASK="写一个 hello 脚本"` → 两轮、`[stop] completed`、轨迹落盘；
+  `make replay TRACE=...` → 逐项打印 `prefix_sha256 / state_bar / tokens / cost_usd`；
+  `AIDE_MAX_TURNS=1` → `turn_limit: 轮次耗尽：1/1`，不是静默空答案。
+- **新增 H 组 3 条入口断言**（52 → **55**）：轨迹字段齐全、replay 读回、轮次耗尽结构化终止。
+- **P1 循环依赖真消除**：`Limits` 抽到 `core/limits.py`，`loop` 与 `compressor` 都 import 它，`TYPE_CHECKING` 加鸭子类型的绕过删除。依赖图里的环没有了，`FailureBreaker` 顺带移到 `recovery.py`（它属于故障处理）。
+- **替身移到产品侧**：`runtime/fakes.py`，`tests/fakes.py` 改为转发。理由：CLI 要用替身，产品代码不能依赖 `tests/`。
+- **M1 拆两段**（ADR 0008）：M1a Harness 内核（55 条 + 入口可跑）= **当前到此为止**；M1b Provider 接入（`llm/client.py` + 2 条断言 + contract 档）独立验收。M1b 的"做/不做"表已写死，防止无底洞。
+- **必须写明的限制**：M1a 通过时系统**仍不能调用真实模型**，全部走 `FakeProvider`。不能因为"55 条全绿"就暗示可用。
+- 计数：`91 passed, 2 skipped`；spec **55 条**（A8+B6+C9+D12+E5+F3+G6+**H6**）；出处 39 行号 / 17 自定 / 完整。
+- 下一项：等用户按 M1a 范围验收。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。

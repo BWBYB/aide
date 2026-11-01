@@ -11,13 +11,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Sequence
+from typing import Callable, Sequence
 
 from .context import STATE_BAR_OPEN
 from .message import Msg
+from .recovery import FailureBreaker
 
-if TYPE_CHECKING:  # 打断 loop → compressor → loop 的循环导入
-    from .loop import Limits
+from .limits import Limits
 
 COMPRESSED_MARK = "[COMPRESSED]"
 DEFAULT_TOOL_OUTPUT_CHARS = 2000
@@ -67,22 +67,6 @@ class Summary:
 class NoisePolicy:
     drop_duplicate_tool_results: bool = True
     drop_blank_messages: bool = True
-
-
-@dataclass(frozen=True)
-class FailureBreaker:
-    """连续失败计数。阈值 3 来自 error-recovery:42 的生产统计。"""
-
-    max_consecutive: int = 3
-    failures: int = 0
-    opened: bool = False
-
-    def record_failure(self) -> "FailureBreaker":
-        failures = self.failures + 1
-        return FailureBreaker(self.max_consecutive, failures, failures >= self.max_consecutive)
-
-    def record_success(self) -> "FailureBreaker":
-        return FailureBreaker(self.max_consecutive, 0, False)
 
 
 @dataclass(frozen=True)

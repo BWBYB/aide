@@ -38,7 +38,11 @@ make test
 
 ## 三、自动检查（规格）
 
-按声明的 skill 分组，**M1 可执行 52 条**（A8 + B6 + C9 + D12 + E5 + F3 + G6 + H3）。
+按声明的 skill 分组，**M1a 可执行 55 条**（A8 + B6 + C9 + D12 + E5 + F3 + G6 + H6）。
+
+> **M1 拆两段验收**（见 `docs/adr/0008`）：
+> - **M1a Harness 内核**：本节 55 条 + `make run` / `make replay` 可跑。**当前到此为止。**
+> - **M1b Provider 接入**：`llm/client.py` + 2 条新断言 + contract 档，独立验收。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之四、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。
@@ -151,6 +155,9 @@ M1 只测这个函数；M2 接工具时执行器调用同一个 policy —— �
 | `test_loop_compresses_when_over_threshold` | 超阈值时 `run_loop` 真的调用 `compress()`：断言第二轮请求里出现 `[COMPRESSED]`，且请求 token 明显小于原始工具输出 | M1 | **自定** |
 | `test_loop_routes_exec_through_policy` | exec 动作到达执行器前经过 `evaluate()`；**观测点是"执行器没被调用"**，不是"policy 返回 DENY"（后者 E 组已验，断言返回码证明不了工具真的被拦住） | M1 | **自定** |
 | `test_end_to_end_react_cycle` | 完整一轮：请求 → 工具调用 → 结果回灌 → 验证 → 完成；轨迹条数与 `stop_reason` 都符合预期 | M1 | **自定** |
+| `test_run_cli_writes_trace` | `make run` 真的落轨迹，字段齐全（`prefix_sha256` / 状态栏 / tokens / cost），两轮前缀一致 | M1 | **自定** |
+| `test_replay_reads_trace` | `make replay` 能读回并逐项打印——"轨迹可追溯"的唯一验证方式 | M1 | **自定** |
+| `test_max_turns_env_yields_structured_stop` | `AIDE_MAX_TURNS=1` 走出「轮次耗尽」结构化终止，不静默返回空答案 | M1 | **自定** |
 
 ## 三之二、实现顺序与依赖（施工图）
 

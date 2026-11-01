@@ -44,6 +44,10 @@ ENTRY_MODULES = [
     "aide.core.recovery",
     "aide.core.failover",
     "aide.core.policy",
+    "aide.core.limits",
+    "aide.cli",
+    "aide.runtime.trace",
+    "aide.runtime.fakes",
 ]
 
 PROBE = r"""
