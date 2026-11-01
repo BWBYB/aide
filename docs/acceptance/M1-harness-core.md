@@ -28,7 +28,14 @@ make run TASK="总结我今天要做的三件事"
 # 预期：终端逐轮打印行动，最后落 traces/<id>.jsonl
 
 make replay TRACE=traces/<id>.jsonl
-# 预期：逐轮输出 轮次 / prefix_sha256 / 状态栏内容 / 工具调用 / 观察 / tokens / cost
+# 预期：逐轮输出 轮次 / prefix_sha256 / 状态栏 / 工具调用 / 观察 / model / tokens / cost
+# 实测片段：
+#   prefix_sha256 : e8d75f5982ea67fc
+#   state_bar     : time: 2026-11-01T17:55:30
+#   observations  : [{"tool_call_id": "c1", "content": "已写入 /sandbox/out.py", "truncated": false}]
+#   model         : fake-provider
+#   tokens        : 120
+#   cost_usd      : None   ← 未配置价目表；M1b 接价目表后才非空
 
 make run TASK="..." AIDE_MAX_TURNS=1
 # 预期：以「轮次耗尽」结构化终止原因退出，轨迹记录该原因，不得静默返回空答案
@@ -43,6 +50,13 @@ make test
 > **M1 拆两段验收**（见 `docs/adr/0008`）：
 > - **M1a Harness 内核**：本节 55 条 + `make run` / `make replay` 可跑。**当前到此为止。**
 > - **M1b Provider 接入**：`llm/client.py` + 2 条新断言 + contract 档，独立验收。
+>
+> **M1a 的通过条件**：**54 绿 + 1 有理由 skip**。`test_reasoning_echo_matches_provider_contract`
+> 属 contract 档，需真实厂商 API，在 M1a 阶段必然 skip——**不计入"55 全绿"**，
+> 也不得为了让数字好看而删掉它。
+>
+> **`cost_usd` 在 M1a 恒为 `None`**（未配置价目表）。字段存在是硬要求，值为空是事实，
+> 两者都要写明；M1b 接入价目表后才非空。
 另有 7 条因依赖 M2/M4 的系统能力而移到后续阶段，见「三之四、阶段边界」。
 
 **每条断言都必须能在没有网络、没有真实模型的情况下跑通**（用假 provider / 纯函数）。

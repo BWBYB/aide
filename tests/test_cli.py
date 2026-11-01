@@ -24,10 +24,17 @@ def test_run_cli_writes_trace(tmp_path, monkeypatch, capsys) -> None:
     entries = load_trace(trace)
     assert len(entries) == 2, "替身应产生两轮"
     first = entries[0]
-    for key in ("turn", "prefix_sha256", "state_bar", "tool_calls", "usage", "cost_usd"):
+    for key in (
+        "turn", "prefix_sha256", "state_bar", "tool_calls",
+        "observations", "usage", "cost_usd", "model",
+    ):
         assert key in first, f"轨迹缺少字段：{key}"
     assert first["state_bar"].startswith("<agent_status>"), "状态栏没有进轨迹"
     assert first["tool_calls"][0]["name"] == "write_file"
+    # observation 是 ReAct 里模型唯一的外部信息源，必须落盘
+    assert first["observations"][0]["content"] == "已写入 /sandbox/out.py"
+    assert first["observations"][0]["truncated"] is False
+    assert first["model"] == "fake-provider", "轨迹缺模型名，成本无法按模型归组"
     assert first["usage"]["total_tokens"] == 120
 
     # 前缀在两轮之间必须一致（A 组断言在真实入口上的复核）
@@ -52,6 +59,8 @@ def test_replay_reads_trace(tmp_path, capsys) -> None:
     assert "state_bar     : time:" in out
     assert "tokens        : 120" in out
     assert "cost_usd      : None" in out, "未配置价目表时应显式打印 None 而不是省略"
+    assert "observations  : [" in out and "已写入" in out
+    assert "model         : fake-provider" in out
     assert "[replay] 2 轮" in out
 
 
@@ -65,3 +74,13 @@ def test_max_turns_env_yields_structured_stop(tmp_path, monkeypatch, capsys) -> 
     out = capsys.readouterr().out
     assert "turn_limit" in out and "轮次耗尽" in out
     assert len(load_trace(trace)) == 1
+
+
+@pytest.mark.unit
+def test_default_trace_path_is_timestamped(tmp_path, monkeypatch) -> None:
+    """默认轨迹名必须唯一：固定 latest.jsonl 会让"跑两次丢一次"。"""
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", "--task", "写一个脚本"]) == 0
+    files = sorted((tmp_path / "traces").glob("*.jsonl"))
+    assert len(files) == 1
+    assert files[0].name != "latest.jsonl"

@@ -58,9 +58,20 @@ def _limits(args: argparse.Namespace) -> Limits:
     )
 
 
+def _executor(recorder: TraceRecorder):
+    """替身执行器：既返回结果，也把观察登记进轨迹。"""
+
+    def run(call: ToolCall) -> str:
+        result = f"已写入 {call.arguments.get('path')}"
+        recorder.observe(call.id, result)
+        return result
+
+    return run
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     provider = _fake_provider(args.task)
-    recorder = TraceRecorder(provider)
+    recorder = TraceRecorder(provider, model=os.environ.get("AIDE_MODEL", "fake-provider"))
     print("[provider] 替身 FakeProvider（真实模型接入见 M1b）", file=sys.stderr)
 
     result = run_loop(
@@ -71,7 +82,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         clock=datetime.now,
         verifier_baseline=PYTHON_FILE_BASELINE,
         sandbox_root="/sandbox",
-        tool_executor=lambda call: f"已写入 {call.arguments.get('path')}",
+        tool_executor=_executor(recorder),
     )
 
     for entry in recorder.entries:
@@ -97,6 +108,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
         print(f"prefix_sha256 : {entry['prefix_sha256']}")
         print(f"state_bar     : {entry['state_bar'].splitlines()[1] if entry['state_bar'] else '-'}")
         print(f"tool_calls    : {json.dumps(entry['tool_calls'], ensure_ascii=False)}")
+        print(f"model         : {entry['model']}")
+        print(f"observations  : {json.dumps(entry['observations'], ensure_ascii=False)}")
         print(f"tokens        : {entry['usage'].get('total_tokens', 0)}")
         print(f"cost_usd      : {entry['cost_usd']}")
         print(f"response      : {(entry['response_text'] or '')[:60]}")
@@ -111,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     run_p = sub.add_parser("run", help="跑一次循环并落轨迹")
     run_p.add_argument("--task", required=True)
     run_p.add_argument("--max-turns", type=int, default=None)
-    run_p.add_argument("--trace", default="traces/latest.jsonl")
+    run_p.add_argument("--trace", default=None, help="默认 traces/<时间戳>.jsonl，避免覆盖历史")
     run_p.set_defaults(func=cmd_run)
 
     replay_p = sub.add_parser("replay", help="回放轨迹")
@@ -119,6 +132,9 @@ def main(argv: list[str] | None = None) -> int:
     replay_p.set_defaults(func=cmd_replay)
 
     args = parser.parse_args(argv)
+    if args.command == "run" and not args.trace:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        args.trace = f"traces/{stamp}.jsonl"
     return args.func(args)
 
 

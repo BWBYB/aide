@@ -31,15 +31,22 @@ class TraceEntry:
     response_text: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
     cost_usd: float | None = None
+    #: 本轮工具返回的观察。ReAct 里模型唯一的外部信息源，比 response_text 更该落盘
+    observations: list[dict[str, Any]] = field(default_factory=list)
+    #: 产生这条轨迹的模型名。没有它，将来配了价目表也没法按模型归组算成本
+    model: str = ""
 
 
 class TraceRecorder:
     """包装任意 provider，记录每次请求/响应。对调用方完全透明。"""
 
-    def __init__(self, provider: Any, price: "PriceTable | None" = None) -> None:
+    def __init__(
+        self, provider: Any, price: "PriceTable | None" = None, model: str = "unknown"
+    ) -> None:
         self._provider = provider
         self._entries: list[TraceEntry] = []
         self._price = price
+        self._model = model
 
     def complete(self, request: dict[str, Any]) -> Any:
         response = self._provider.complete(request)
@@ -63,9 +70,23 @@ class TraceRecorder:
                 response_text=getattr(response, "content", None),
                 usage=usage,
                 cost_usd=self._price(usage) if self._price else None,
+                model=self._model,
             )
         )
         return response
+
+    def observe(self, tool_call_id: str, content: str, limit: int = 500) -> None:
+        """登记一次工具返回。归属到"刚刚发出那轮"的轨迹记录。"""
+        if not self._entries:
+            return
+        truncated = len(content) > limit
+        self._entries[-1].observations.append(
+            {
+                "tool_call_id": tool_call_id,
+                "content": content[:limit] + ("…" if truncated else ""),
+                "truncated": truncated,
+            }
+        )
 
     @property
     def entries(self) -> list[TraceEntry]:

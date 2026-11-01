@@ -262,6 +262,15 @@
 - 计数：`91 passed, 2 skipped`；spec **55 条**（A8+B6+C9+D12+E5+F3+G6+**H6**）；出处 39 行号 / 17 自定 / 完整。
 - 下一项：等用户按 M1a 范围验收。
 
+### 2026-11-01：轨迹契约补齐（observation / model / 唯一文件名）
+- 更新位置：`src/aide/runtime/trace.py`、`cli.py`、`tests/test_cli.py`、M1 清单
+- **P0 缺 observation（用户指出）**：轨迹只有"发出了什么调用"和"模型说了什么"，**工具返回了什么一个字没落盘**。这直接卡住人工判断第 1 项（"这一轮它为什么这么做"——第 2 轮的决策依据就是第 1 轮的观察），也让 M5 的"首错步归因"失去依据。已加 `observations: [{tool_call_id, content, truncated}]`，`replay` 同步打印；超长内容截断到 500 字符并标 `truncated`。
+- **P2 默认轨迹名覆盖历史**：`traces/latest.jsonl` 让"跑两次丢一次"。改为 `traces/<时间戳>.jsonl`，固定路径需显式传 `--trace`。测试用 `monkeypatch.chdir` 断言文件名不是 `latest.jsonl`。
+- **P2 缺 model 字段**：价目表按模型计价，不记模型名则历史轨迹永远算不准成本，M5 的"评估驱动模型选型"也没法按模型分组。已加 `model` 字段（来自 `AIDE_MODEL`，替身默认 `fake-provider`）。
+- **清单补三处边界**：① M1a 通过条件 = **54 绿 + 1 有理由 skip**（contract 档需真实 API，不得为凑数字删掉）；② `cost_usd` 在 M1a 恒为 `None`，字段存在是硬要求、值为空是事实；③ 命令段写入真实回放片段。
+- 计数：`92 passed, 2 skipped`；spec **55 条**不变（本轮是轨迹契约补齐，未新增断言，只强化既有三条）；出处覆盖完整。
+- 下一项：等用户勾选 M1a。
+
 ### 2026-10-30：修依赖成环，check-spec-diff 改为可配置基线
 - 更新位置：`docs/acceptance/M1-harness-core.md`、`Makefile`、`docs/status.md`
 - **依赖成环（规则当场失效）**：`test_verifier_rejects_obviously_bad_output` 依赖 E 组"任务声明验收基线"，而全局顺序是 G 在 E 之前。走到 G 时 E 还没做，只剩"临时跳过"或"放宽判定"两条路——正是规则要防的两种。
